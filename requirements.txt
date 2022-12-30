@@ -1,0 +1,4 @@
+fastapi~=0.88.0
+starlette~=0.22.0
+setuptools~=65.6.3
+pydantic~=1.10.4
