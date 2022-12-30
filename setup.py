@@ -7,10 +7,14 @@ visit https://tus.io for more information
 
 from setuptools import setup, find_packages
 
+with open('README.md', 'r') as f:
+    long_description = f.read()
+
 setup(
     name='tuspy-fast-api',
     version='1.0.0',
     description='TUS py protocol implementation in FastAPI',
+    long_description=long_description,
     author='Edi Hasaj',
     license='MIT',
     author_email='edihasaj@outlook.com',
