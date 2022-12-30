@@ -15,7 +15,7 @@
             inline: true,
             target: '#drag-drop-area'
         })
-        .use(Tus, {endpoint: 'http://127.0.0.1:8000/files'})
+        .use(Tus, {endpoint: 'http://127.0.0.1:8000/files/'})
 
     uppy.on('complete', (result) => {
         console.log('Upload complete! We’ve uploaded these files:', result.successful)

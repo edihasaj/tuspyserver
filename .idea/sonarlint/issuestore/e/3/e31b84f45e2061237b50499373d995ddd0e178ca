@@ -1,17 +1,0 @@
-
-dpython:S1192á	"KDefine a constant instead of duplicating this literal "writing to" 5 times.(¨Êûº
-kpython:S1192à	"MDefine a constant instead of duplicating this literal "reading from" 5 times.(†‰ğàúÿÿÿÿ
-Jpython:S1172“",Remove the unused function parameter "name".(¤·Ÿ•úÿÿÿÿ
-Lpython:S5727™"3Remove this identity check; it will always be True.(Âæ¿á
-rpython:S3776»"TRefactor this function to reduce its Cognitive Complexity from 20 to the 15 allowed.(÷í™Ìúÿÿÿÿ
-Vpython:S112÷">Replace this generic exception class with a more specific one.(ú™İö
-rpython:S3776İ"TRefactor this function to reduce its Cognitive Complexity from 16 to the 15 allowed.(««àúÿÿÿÿ
-rpython:S3776š"TRefactor this function to reduce its Cognitive Complexity from 18 to the 15 allowed.(¤Šíîüÿÿÿÿ
-Vpython:S5754¿"8Catch a more specific exception or reraise the exception(ÛşƒÙşÿÿÿÿ
-mpython:S3776Ï"TRefactor this function to reduce its Cognitive Complexity from 25 to the 15 allowed.(îŞ–›
-Vpython:S5754ä"8Catch a more specific exception or reraise the exception(ÛşƒÙşÿÿÿÿ
-Bpython:S1172î")Remove the unused function parameter "f".(Ì»¨×
-mpython:S3776ı
-"TRefactor this function to reduce its Cognitive Complexity from 22 to the 15 allowed.(ÂÁ»
-_python:S5799¡"GMerge these implicitly concatenated strings; or did you forget a comma?(å‘#
-Vpython:S5754Ü"8Catch a more specific exception or reraise the exception(ÛşƒÙşÿÿÿÿ
