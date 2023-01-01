@@ -1,4 +1,5 @@
 # FastAPI Tus
+
 FastAPI Extension implementing the Tus.io server protocol
 
 ### Prerequisites `FastAPI`
@@ -34,6 +35,8 @@ app.include_router(router, prefix="/files")
 ```
 
 This package has the ability to upload, download, delete (including a scheduler) files.
+
+```python setup.py sdist bdist_wheel```
 
 Any contribution is welcomed.
 

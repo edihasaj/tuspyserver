@@ -1,8 +1,6 @@
 import base64
 import json
 import os
-import sched
-import time
 from datetime import datetime, timedelta
 from uuid import uuid4
 
@@ -51,8 +49,8 @@ def get_upload_metadata(response: Response, uuid: str) -> Response:
     file_length = _get_file_length(uuid)
 
     response.headers["Tus-Resumable"] = TUS_VERSION
-    response.headers["Content-Length"] = str(file_length)
-    response.headers["Upload-Length"] = str(meta.size)
+    response.headers["Content-Length"] = str(meta.size)
+    response.headers["Upload-Length"] = str(file_length)
     response.headers["Upload-Offset"] = str(meta.offset)
     response.headers["Cache-Control"] = "no-store"
     response.headers[
@@ -273,7 +271,7 @@ def _get_and_save_the_file(
 
     response.headers["Tus-Resumable"] = TUS_VERSION
     response.headers["Upload-Offset"] = str(meta.offset)
-    response.headers["Upload-Expires"] = datetime.fromisoformat(meta.expires).strftime("%a, %d %b %G %T %Z")
+    # response.headers["Upload-Expires"] = datetime.fromisoformat(meta.expires).strftime("%a, %d %b %G %T %Z") TODO
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
@@ -292,9 +290,8 @@ def remove_expired_files():
         if meta.expires and datetime.fromisoformat(meta.expires) < datetime.now():
             _delete_files(f)
 
-
-# Create a scheduler for deleting the files
-scheduler = sched.scheduler(time.time, time.sleep)
-run_time = time.mktime(time.strptime("01:00", "%H:%M"))
-scheduler.enterabs(run_time, 1, remove_expired_files)
-scheduler.run()
+# # Create a scheduler for deleting the files
+# scheduler = sched.scheduler(time.time, time.sleep)
+# run_time = time.mktime(time.strptime("01:00", "%H:%M"))
+# scheduler.enterabs(run_time, 1, remove_expired_files)
+# scheduler.run()
