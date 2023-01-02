@@ -7,7 +7,7 @@ from uuid import uuid4
 from fastapi import Header, HTTPException, Response, Request, status, Depends, Path, APIRouter
 from starlette.responses import FileResponse
 
-from metadata import FileMetadata
+from tusserver.metadata import FileMetadata
 
 router = APIRouter()
 

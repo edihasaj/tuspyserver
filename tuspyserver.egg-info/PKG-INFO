@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: tuspyserver
-Version: 1.0.7
+Version: 1.0.8
 Summary: TUS py protocol implementation in FastAPI
 Home-page: https://github.com/edihasaj/tuspy-fast-api
 Author: Edi Hasaj
