@@ -1,6 +1,6 @@
 Metadata-Version: 2.1
 Name: tuspyserver
-Version: 1.0.6
+Version: 1.0.7
 Summary: TUS py protocol implementation in FastAPI
 Home-page: https://github.com/edihasaj/tuspy-fast-api
 Author: Edi Hasaj
@@ -27,7 +27,7 @@ FastAPI Extension implementing the Tus.io server protocol
 Installation from PyPi repository (recommended for latest stable release)
 
 ```
-pip install tuspy-fast-api
+pip install tuspyserver
 ```
 
 ## Usage
@@ -39,7 +39,7 @@ from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
 from starlette.staticfiles import StaticFiles
 
-from tusserver.tus import router
+from tusserver import tus
 
 app = FastAPI()
 app.add_middleware(
@@ -49,7 +49,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory="static"), name="static")
-app.include_router(router, prefix="/files")
+app.include_router(tus.router, prefix="/files")
 ```
 
 This package has the ability to upload, download, delete (including a scheduler) files.
