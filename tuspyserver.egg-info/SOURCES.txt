@@ -1,0 +1,11 @@
+LICENSE
+README.md
+setup.py
+tuspyserver.egg-info/PKG-INFO
+tuspyserver.egg-info/SOURCES.txt
+tuspyserver.egg-info/dependency_links.txt
+tuspyserver.egg-info/requires.txt
+tuspyserver.egg-info/top_level.txt
+tusserver/__init__.py
+tusserver/metadata.py
+tusserver/tus.py

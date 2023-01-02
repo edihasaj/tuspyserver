@@ -5,8 +5,6 @@ o
 ?venv/Lib/site-packages/uvicorn/protocols/http/httptools_impl.py,8\b\8bc6d67e53782384b4950d305c8607a710e8d1fa
 ]
 -venv/Lib/site-packages/starlette/responses.py,6\6\66360b1e8ea4246f8f295e08d366652052854fbe
-;
-metadata.py,a\7\a77237ace4055dec5d1bd17dc107166609823ff3
 @
 requirements.txt,1\9\19359a61ae2446b51b549167b014da2fcf265768
 :

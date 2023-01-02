@@ -11,8 +11,8 @@ with open('README.md', 'r') as f:
     long_description = f.read()
 
 setup(
-    name='tuspy-fast-api',
-    version='1.0.2',
+    name='tuspyserver',
+    version='1.0.6',
     description='TUS py protocol implementation in FastAPI',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -23,7 +23,6 @@ setup(
     packages=find_packages(),
     platforms="any",
     include_package_data=True,
-    py_modules=['tuspy-fast-api'],
     install_requires=[
         'fastapi>=0.88.0',
         'starlette>=0.22.0',
