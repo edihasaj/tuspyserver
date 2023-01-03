@@ -20,8 +20,10 @@ DAYS_TO_KEEP = 5
 
 async def _get_request_chunk(request: Request, uuid: str = Path(...), post_request: bool = False) -> bool | None:
     meta = _read_metadata(uuid)
+    if not meta or not _file_exists(uuid):
+        return False
 
-    with open(f"{FILES_DIR}/{uuid}", "wb") as f:
+    with open(f"{FILES_DIR}/{uuid}", "ab") as f:
         async for chunk in request.stream():
             if post_request and chunk is None or len(chunk) == 0:
                 return None
@@ -50,7 +52,7 @@ def get_upload_metadata(response: Response, uuid: str) -> Response:
 
     response.headers["Tus-Resumable"] = TUS_VERSION
     response.headers["Content-Length"] = str(meta.size)
-    response.headers["Upload-Length"] = str(file_length)
+    response.headers["Upload-Length"] = str(meta.size)
     response.headers["Upload-Offset"] = str(meta.offset)
     response.headers["Cache-Control"] = "no-store"
     response.headers[
