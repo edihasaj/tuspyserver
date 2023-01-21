@@ -14,7 +14,7 @@ router = APIRouter()
 FILES_DIR = '/tmp/files'
 MAX_SIZE = 128849018880
 TUS_VERSION = '1.0.0'
-TUS_EXTENSION = 'creation,creation-defer-length,creation-with-upload,expiration,termination,checksum'
+TUS_EXTENSION = 'creation,creation-defer-length,creation-with-upload,expiration,termination'
 DAYS_TO_KEEP = 5
 
 
@@ -47,8 +47,6 @@ def get_upload_metadata(response: Response, uuid: str) -> Response:
     meta = _read_metadata(uuid)
     if meta is None or not _file_exists(uuid):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
-
-    file_length = _get_file_length(uuid)
 
     response.headers["Tus-Resumable"] = TUS_VERSION
     response.headers["Content-Length"] = str(meta.size)
@@ -109,17 +107,17 @@ async def create_upload(
     if upload_metadata is not None:
         # Decode the base64-encoded string
         for kv in upload_metadata.split(","):
-            key, value = kv.split(" ")
-            metadata[key.strip()] = base64.b64decode(value.strip()).decode("utf-8")
+            key, value = kv.rsplit(" ", 1)
+            decoded_value = base64.b64decode(value.strip()).decode("utf-8")
+            metadata[key.strip()] = decoded_value
 
     uuid = str(uuid4().hex)
 
     date_expiry = datetime.now() + timedelta(days=DAYS_TO_KEEP)
-    _write_metadata(
-        FileMetadata.from_request(
-            uuid, metadata, upload_length, str(datetime.now()), defer_length, str(date_expiry.isoformat())
-        )
+    saved_meta_data = FileMetadata.from_request(
+        uuid, metadata, upload_length, str(datetime.now()), defer_length, str(date_expiry.isoformat())
     )
+    _write_metadata(saved_meta_data)
 
     _initialize_file(uuid)
 
@@ -134,6 +132,7 @@ async def create_upload(
 
     response.headers["Location"] = f"http://127.0.0.1:8000/files/{uuid}"
     response.headers["Tus-Resumable"] = TUS_VERSION
+    response.headers["Content-Length"] = str(0)
     response.status_code = status.HTTP_201_CREATED
     return response
 
@@ -191,7 +190,7 @@ def delete_upload(uuid: str, response: Response) -> Response:
 
 def _write_metadata(meta: FileMetadata) -> None:
     if not os.path.exists(FILES_DIR):
-        os.mkdir(FILES_DIR)
+        os.makedirs(FILES_DIR)
 
     with open(os.path.join(FILES_DIR, f'{meta.uid}.info'), 'w') as f:
         f.write(json.dumps(meta, indent=4, default=lambda k: k.__dict__))
@@ -199,7 +198,7 @@ def _write_metadata(meta: FileMetadata) -> None:
 
 def _initialize_file(uid: str) -> None:
     if not os.path.exists(FILES_DIR):
-        os.mkdir(FILES_DIR)
+        os.makedirs(FILES_DIR)
 
     open(os.path.join(FILES_DIR, f'{uid}'), 'a').close()
 
@@ -260,7 +259,7 @@ def _get_and_save_the_file(
         raise HTTPException(status_code=400, detail="Upload-Length header is required")
 
     # Check if the Upload Offset with Content-Length header is correct
-    if meta.offset != content_length:
+    if meta.offset != upload_length + content_length:
         raise HTTPException(status_code=409)
 
     if meta.defer_length:
@@ -273,7 +272,7 @@ def _get_and_save_the_file(
 
     response.headers["Tus-Resumable"] = TUS_VERSION
     response.headers["Upload-Offset"] = str(meta.offset)
-    # response.headers["Upload-Expires"] = datetime.fromisoformat(meta.expires).strftime("%a, %d %b %G %T %Z") TODO
+    # response.headers["Upload-Expires"] = str(datetime.fromisoformat(meta.expires).strftime("%a, %d %b %G %T %Z"))
     response.status_code = status.HTTP_204_NO_CONTENT
     return response
 
