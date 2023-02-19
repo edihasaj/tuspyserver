@@ -15,7 +15,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.include_router(
     create_api_router(
-        files_dir='/tmp/filezz',
+        files_dir='/tmp/different_dir',
         location='http://127.0.0.1:8000/files',
         max_size=128849018880
     ),

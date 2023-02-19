@@ -9,14 +9,13 @@ from starlette.responses import FileResponse
 
 from tusserver.metadata import FileMetadata
 
-def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000/files', max_size = 128849018880):
 
+def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/files', max_size=128849018880):
     router = APIRouter()
 
-    TUS_VERSION = '1.0.0'
-    TUS_EXTENSION = 'creation,creation-defer-length,creation-with-upload,expiration,termination'
-    DAYS_TO_KEEP = 5
-
+    tus_version = '1.0.0'
+    tus_extension = 'creation,creation-defer-length,creation-with-upload,expiration,termination'
+    days_to_keep = 5
 
     async def _get_request_chunk(request: Request, uuid: str = Path(...), post_request: bool = False) -> bool | None:
         meta = _read_metadata(uuid)
@@ -41,14 +40,13 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
 
         return True
 
-
     @router.head("/{uuid}", status_code=status.HTTP_200_OK)
     def get_upload_metadata(response: Response, uuid: str) -> Response:
         meta = _read_metadata(uuid)
         if meta is None or not _file_exists(uuid):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-        response.headers["Tus-Resumable"] = TUS_VERSION
+        response.headers["Tus-Resumable"] = tus_version
         response.headers["Content-Length"] = str(meta.size)
         response.headers["Upload-Length"] = str(meta.size)
         response.headers["Upload-Offset"] = str(meta.offset)
@@ -58,7 +56,6 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
                                  f"filetype {base64.b64encode(bytes(meta.metadata['type'], 'utf-8'))}"
         response.status_code = status.HTTP_200_OK
         return response
-
 
     @router.patch("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
     def upload_chunk(
@@ -77,17 +74,15 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
             upload_offset,
         )
 
-
     @router.options("/", status_code=status.HTTP_204_NO_CONTENT)
     def options_create_upload(response: Response) -> Response:
-        response.headers["Tus-Extension"] = TUS_EXTENSION
-        response.headers["Tus-Resumable"] = TUS_VERSION
-        response.headers["Tus-Version"] = TUS_VERSION
+        response.headers["Tus-Extension"] = tus_extension
+        response.headers["Tus-Resumable"] = tus_version
+        response.headers["Tus-Version"] = tus_version
         response.headers["Tus-Max-Size"] = str(max_size)
         response.headers["Content-Length"] = str(0)
         response.status_code = status.HTTP_204_NO_CONTENT
         return response
-
 
     @router.post("/", status_code=status.HTTP_201_CREATED)
     async def create_upload(
@@ -113,7 +108,7 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
 
         uuid = str(uuid4().hex)
 
-        date_expiry = datetime.now() + timedelta(days=DAYS_TO_KEEP)
+        date_expiry = datetime.now() + timedelta(days=days_to_keep)
         saved_meta_data = FileMetadata.from_request(
             uuid, metadata, upload_length, str(datetime.now()), defer_length, str(date_expiry.isoformat())
         )
@@ -131,11 +126,10 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
             return response
 
         response.headers["Location"] = f"{location}/{uuid}"
-        response.headers["Tus-Resumable"] = TUS_VERSION
+        response.headers["Tus-Resumable"] = tus_version
         response.headers["Content-Length"] = str(0)
         response.status_code = status.HTTP_201_CREATED
         return response
-
 
     @router.options("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
     def options_upload_chunk(response: Response, uuid: str) -> Response:
@@ -143,13 +137,12 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
         if meta is None or not _file_exists(uuid):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-        response.headers["Tus-Extension"] = TUS_EXTENSION
-        response.headers["Tus-Resumable"] = TUS_VERSION
-        response.headers["Tus-Version"] = TUS_VERSION
+        response.headers["Tus-Extension"] = tus_extension
+        response.headers["Tus-Resumable"] = tus_version
+        response.headers["Tus-Version"] = tus_version
         response.headers["Content-Length"] = str(0)
         response.status_code = status.HTTP_204_NO_CONTENT
         return response
-
 
     @router.get("/{uuid}")
     def get_upload(uuid: str) -> FileResponse:
@@ -166,10 +159,9 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
             filename=meta.metadata["name"],
             headers={
                 "Content-Length": str(meta.offset),
-                "Tus-Resumable": TUS_VERSION
+                "Tus-Resumable": tus_version
             }
         )
-
 
     @router.delete("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
     def delete_upload(uuid: str, response: Response) -> Response:
@@ -183,10 +175,9 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
         _delete_files(uuid)
 
         # Return a 204 No Content response
-        response.headers["Tus-Resumable"] = TUS_VERSION
+        response.headers["Tus-Resumable"] = tus_version
         response.status_code = status.HTTP_204_NO_CONTENT
         return response
-
 
     def _write_metadata(meta: FileMetadata) -> None:
         if not os.path.exists(files_dir):
@@ -195,13 +186,11 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
         with open(os.path.join(files_dir, f'{meta.uid}.info'), 'w') as f:
             f.write(json.dumps(meta, indent=4, default=lambda k: k.__dict__))
 
-
     def _initialize_file(uid: str) -> None:
         if not os.path.exists(files_dir):
             os.makedirs(files_dir)
 
         open(os.path.join(files_dir, f'{uid}'), 'a').close()
-
 
     def _read_metadata(uid: str) -> FileMetadata | None:
         fpath = os.path.join(files_dir, f'{uid}.info')
@@ -211,7 +200,6 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
 
         return None
 
-
     def _get_file(uid: str) -> bytes | None:
         fpath = os.path.join(files_dir, uid)
         if os.path.exists(fpath):
@@ -220,14 +208,11 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
 
         return None
 
-
     def _file_exists(uid: str) -> bool:
         return os.path.exists(os.path.join(files_dir, uid))
 
-
     def _get_file_length(uid: str) -> int:
         return os.path.getsize(os.path.join(files_dir, uid))
-
 
     def _delete_files(uid: str) -> None:
         fpath = os.path.join(files_dir, uid)
@@ -237,7 +222,6 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
         meta_path = os.path.join(files_dir, f"{uid}.info")
         if os.path.exists(meta_path):
             os.remove(meta_path)
-
 
     def _get_and_save_the_file(
             response: Response,
@@ -266,16 +250,15 @@ def create_api_router(files_dir = '/tmp/files', location= 'http://127.0.0.1:8000
             meta.size = upload_length
 
         if not meta.expires:
-            date_expiry = datetime.now() + timedelta(days=DAYS_TO_KEEP)
+            date_expiry = datetime.now() + timedelta(days=days_to_keep)
             meta.expires = str(date_expiry.isoformat())
         _write_metadata(meta)
 
-        response.headers["Tus-Resumable"] = TUS_VERSION
+        response.headers["Tus-Resumable"] = tus_version
         response.headers["Upload-Offset"] = str(meta.offset)
         # response.headers["Upload-Expires"] = str(datetime.fromisoformat(meta.expires).strftime("%a, %d %b %G %T %Z"))
         response.status_code = status.HTTP_204_NO_CONTENT
         return response
-
 
     def remove_expired_files():
         file_list = os.listdir(files_dir)
