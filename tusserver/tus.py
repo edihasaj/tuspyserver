@@ -2,6 +2,7 @@ import base64
 import json
 import os
 from datetime import datetime, timedelta
+from typing import Callable
 from uuid import uuid4
 
 from fastapi import Header, HTTPException, Response, Request, status, Depends, Path, APIRouter
@@ -10,7 +11,12 @@ from starlette.responses import FileResponse
 from tusserver.metadata import FileMetadata
 
 
-def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/files', max_size=128849018880):
+def create_api_router(
+        files_dir='/tmp/files',
+        location='http://127.0.0.1:8000/files',
+        max_size=128849018880,
+        on_upload_complete: Callable[[str], None] = None,
+):
     router = APIRouter()
 
     tus_version = '1.0.0'
@@ -66,13 +72,18 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
             upload_offset: int = Header(None),
             _=Depends(_get_request_chunk),
     ) -> Response:
-        return _get_and_save_the_file(
+        response_headers = _get_and_save_the_file(
             response,
             uuid,
             content_type,
             content_length,
             upload_offset,
         )
+
+        if on_upload_complete:
+            on_upload_complete(os.path.join(files_dir, f'{uuid}'))
+
+        return response_headers
 
     @router.options("/", status_code=status.HTTP_204_NO_CONTENT)
     def options_create_upload(response: Response) -> Response:
