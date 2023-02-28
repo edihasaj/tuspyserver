@@ -99,7 +99,7 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
 
         # Create a new upload and store the file and metadata in the mapping
         metadata = {}
-        if upload_metadata is not None:
+        if upload_metadata is not None and upload_metadata != '':
             # Decode the base64-encoded string
             for kv in upload_metadata.split(","):
                 key, value = kv.rsplit(" ", 1)
