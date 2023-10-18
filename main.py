@@ -14,9 +14,10 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
-def on_upload_complete(file_path: str):
+def on_upload_complete(file_path: str, metadata: dict):
     print('Upload complete')
     print(file_path)
+    print(metadata)
 
 
 def on_your_specific_auth():

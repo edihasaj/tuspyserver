@@ -15,7 +15,7 @@ def create_api_router(
         files_dir='/tmp/files',
         location='http://127.0.0.1:8000/files',
         max_size=128849018880,
-        on_upload_complete: Optional[Callable[[str], None]] = None,
+        on_upload_complete: Optional[Callable[[str, dict], None]] = None,
         auth: Optional[Callable[[], None]] = None,
         days_to_keep: int = 5,
 ):
@@ -273,7 +273,7 @@ def create_api_router(
             response.headers["Upload-Expires"] = str(meta.expires)
             response.status_code = status.HTTP_204_NO_CONTENT
             if on_upload_complete:
-                on_upload_complete(os.path.join(files_dir, f'{uuid}'))
+                on_upload_complete(os.path.join(files_dir, f'{uuid}'), meta.metadata)
 
             return response
 
