@@ -9,7 +9,7 @@ updates:
     directory: "/" # Location of package manifests
     schedule:
       interval: "weekly"
-    target-branch: "develop"
+    target-branch: "main"
     open-pull-requests-limit: 15
 
   - package-ecosystem: "github-actions"
@@ -17,4 +17,4 @@ updates:
     schedule:
       # Check for updates to GitHub Actions every weekday
       interval: "weekly"
-    target-branch: "develop"
+    target-branch: "main"
