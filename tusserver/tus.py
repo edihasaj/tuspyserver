@@ -2,6 +2,7 @@ import base64
 import json
 import os
 from datetime import datetime, timedelta
+from typing import Callable, Optional
 from uuid import uuid4
 
 from fastapi import Header, HTTPException, Response, Request, status, Depends, Path, APIRouter
@@ -9,13 +10,22 @@ from starlette.responses import FileResponse
 
 from tusserver.metadata import FileMetadata
 
+def default_auth():
+        pass
 
-def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/files', max_size=128849018880):
+
+def create_api_router(
+        files_dir='/tmp/files',
+        location='http://127.0.0.1:8000/files',
+        max_size=128849018880,
+        on_upload_complete: Optional[Callable[[str, dict], None]] = None,
+        auth: Optional[Callable[[], None]] = default_auth,
+        days_to_keep: int = 5,
+):
     router = APIRouter()
 
     tus_version = '1.0.0'
     tus_extension = 'creation,creation-defer-length,creation-with-upload,expiration,termination'
-    days_to_keep = 5
 
     async def _get_request_chunk(request: Request, uuid: str = Path(...), post_request: bool = False) -> bool | None:
         meta = _read_metadata(uuid)
@@ -41,7 +51,7 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
         return True
 
     @router.head("/{uuid}", status_code=status.HTTP_200_OK)
-    def get_upload_metadata(response: Response, uuid: str) -> Response:
+    def get_upload_metadata(response: Response, uuid: str, _=Depends(auth)) -> Response:
         meta = _read_metadata(uuid)
         if meta is None or not _file_exists(uuid):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -65,8 +75,9 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
             content_length: int = Header(None),
             upload_offset: int = Header(None),
             _=Depends(_get_request_chunk),
+            __=Depends(auth)
     ) -> Response:
-        return _get_and_save_the_file(
+        response_headers = _get_and_save_the_file(
             response,
             uuid,
             content_type,
@@ -74,8 +85,10 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
             upload_offset,
         )
 
+        return response_headers
+
     @router.options("/", status_code=status.HTTP_204_NO_CONTENT)
-    def options_create_upload(response: Response) -> Response:
+    def options_create_upload(response: Response, __=Depends(auth)) -> Response:
         response.headers["Tus-Extension"] = tus_extension
         response.headers["Tus-Resumable"] = tus_version
         response.headers["Tus-Version"] = tus_version
@@ -91,6 +104,7 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
             upload_metadata: str = Header(None),
             upload_length: int = Header(None),
             upload_defer_length: int = Header(None),
+            _=Depends(auth)
     ) -> Response:
         if upload_defer_length is not None and upload_defer_length != 1:
             raise HTTPException(status_code=400, detail="Invalid Upload-Defer-Length")
@@ -110,7 +124,12 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
 
         date_expiry = datetime.now() + timedelta(days=days_to_keep)
         saved_meta_data = FileMetadata.from_request(
-            uuid, metadata, upload_length, str(datetime.now()), defer_length, str(date_expiry.isoformat())
+            uuid,
+            metadata,
+            upload_length,
+            str(datetime.now()),
+            defer_length,
+            str(date_expiry.isoformat()),
         )
         _write_metadata(saved_meta_data)
 
@@ -132,7 +151,7 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
         return response
 
     @router.options("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
-    def options_upload_chunk(response: Response, uuid: str) -> Response:
+    def options_upload_chunk(response: Response, uuid: str, _=Depends(auth)) -> Response:
         meta = _read_metadata(uuid)
         if meta is None or not _file_exists(uuid):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
@@ -164,7 +183,7 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
         )
 
     @router.delete("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
-    def delete_upload(uuid: str, response: Response) -> Response:
+    def delete_upload(uuid: str, response: Response, _=Depends(auth)) -> Response:
         meta = _read_metadata(uuid)
 
         # Check if the upload ID is valid
@@ -239,9 +258,6 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
         if not meta or uuid != meta.uid:
             raise HTTPException(status_code=404)
 
-        if meta.defer_length and upload_length is None:
-            raise HTTPException(status_code=400, detail="Upload-Length header is required")
-
         # Check if the Upload Offset with Content-Length header is correct
         if meta.offset != upload_length + content_length:
             raise HTTPException(status_code=409)
@@ -254,9 +270,19 @@ def create_api_router(files_dir='/tmp/files', location='http://127.0.0.1:8000/fi
             meta.expires = str(date_expiry.isoformat())
         _write_metadata(meta)
 
+        if meta.size == meta.offset:
+            response.headers["Tus-Resumable"] = tus_version
+            response.headers["Upload-Offset"] = str(str(meta.offset) if meta.offset > 0 else str(content_length))
+            response.headers["Upload-Expires"] = str(meta.expires)
+            response.status_code = status.HTTP_204_NO_CONTENT
+            if on_upload_complete:
+                on_upload_complete(os.path.join(files_dir, f'{uuid}'), meta.metadata)
+
+            return response
+
         response.headers["Tus-Resumable"] = tus_version
         response.headers["Upload-Offset"] = str(meta.offset)
-        # response.headers["Upload-Expires"] = str(datetime.fromisoformat(meta.expires).strftime("%a, %d %b %G %T %Z"))
+        response.headers["Upload-Expires"] = str(meta.expires)
         response.status_code = status.HTTP_204_NO_CONTENT
         return response
 

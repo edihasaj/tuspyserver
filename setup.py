@@ -12,7 +12,7 @@ with open('README.md', 'r') as f:
 
 setup(
     name='tuspyserver',
-    version='1.1.0',
+    version='1.3.1',
     description='TUS py protocol implementation in FastAPI',
     long_description=long_description,
     long_description_content_type='text/markdown',
