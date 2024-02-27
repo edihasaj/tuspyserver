@@ -12,7 +12,7 @@ with open('README.md', 'r') as f:
 
 setup(
     name='tuspyserver',
-    version='1.3.1',
+    version='2.0.0',
     description='TUS py protocol implementation in FastAPI',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -24,9 +24,8 @@ setup(
     platforms="any",
     include_package_data=True,
     install_requires=[
-        'fastapi>=0.88.0',
-        'starlette>=0.22.0',
-        'pydantic>=1.10.4',
+        'fastapi>=0.110.0',
+        'pydantic>=2.6.2',
     ],
     classifiers=[
         'Environment :: Web Environment',
