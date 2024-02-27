@@ -1,11 +1,11 @@
-from typing import Any
+from typing import Any, Hashable
 
 from pydantic import BaseModel
 
 
 class FileMetadata(BaseModel):
     uid: str
-    metadata: dict[Any, str]
+    metadata: dict[Hashable, str]
     size: int
     offset: int = 0
     upload_part: int = 0
