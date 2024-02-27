@@ -10,13 +10,16 @@ from starlette.responses import FileResponse
 
 from tusserver.metadata import FileMetadata
 
+def default_auth():
+        pass
+
 
 def create_api_router(
         files_dir='/tmp/files',
         location='http://127.0.0.1:8000/files',
         max_size=128849018880,
         on_upload_complete: Optional[Callable[[str, dict], None]] = None,
-        auth: Optional[Callable[[], None]] = None,
+        auth: Optional[Callable[[], None]] = default_auth,
         days_to_keep: int = 5,
 ):
     router = APIRouter()
