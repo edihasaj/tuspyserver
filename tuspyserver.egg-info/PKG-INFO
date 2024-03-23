@@ -15,8 +15,6 @@ Classifier: Programming Language :: Python
 Classifier: Topic :: Software Development :: Libraries :: Python Modules
 Description-Content-Type: text/markdown
 License-File: LICENSE
-Requires-Dist: fastapi>=0.110.0
-Requires-Dist: pydantic>=2.6.2
 
 # FastAPI Tus
 
