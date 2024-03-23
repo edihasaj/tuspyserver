@@ -16,13 +16,13 @@ class FileMetadata(BaseModel):
 
     @classmethod
     def from_request(
-            cls,
-            uid: str,
-            metadata: dict[Any, str],
-            size: int,
-            created_at: str,
-            defer_length: bool,
-            expires: str
+        cls,
+        uid: str,
+        metadata: dict[Any, str],
+        size: int,
+        created_at: str,
+        defer_length: bool,
+        expires: str,
     ):
         return FileMetadata(
             uid=uid,
@@ -30,5 +30,5 @@ class FileMetadata(BaseModel):
             size=size,
             created_at=created_at,
             defer_length=defer_length,
-            expires=expires
+            expires=expires,
         )
