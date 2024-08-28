@@ -54,6 +54,19 @@ This package has the ability to upload, download, delete (including a scheduler)
 
 ```python setup.py sdist bdist_wheel```
 
+
+### Versioning & Publishing
+
+**Reminder:** Before pushing changes to the `main` branch, ensure that you increment the version number in `setup.py` according to the nature of your changes:
+
+- **Patch version** for minor bug fixes.
+- **Minor version** for new features or significant improvements.
+- **Major version** for breaking changes.
+
+After committing your changes to the `main` branch, create a Pull Request (PR) to merge `main` into the `production` branch. Once merged, the package will automatically be published to PyPI via the configured CI/CD workflow.
+
+
 Any contribution is welcomed.
 
 <a href="https://www.buymeacoffee.com/edihasaj" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-red.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+
