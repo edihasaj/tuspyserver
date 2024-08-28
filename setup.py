@@ -12,13 +12,13 @@ with open("README.md", "r") as f:
 
 setup(
     name="tuspyserver",
-    version="2.0.0",
+    version="2.1.0",
     description="TUS py protocol implementation in FastAPI",
     long_description=long_description,
     long_description_content_type="text/markdown",
     author="Edi Hasaj",
     license="MIT",
-    author_email="edihasaj@outlook.com",
+    author_email="edihasaj@gmail.com",
     url="https://github.com/edihasaj/tuspy-fast-api",
     packages=find_packages(),
     platforms="any",
