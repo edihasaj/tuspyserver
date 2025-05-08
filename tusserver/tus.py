@@ -32,6 +32,8 @@ def create_api_router(
     days_to_keep: int = 5,
     prefix: str = "files",
 ):
+    if prefix and prefix[0] == "/":
+        prefix = prefix[1:]
     router = APIRouter(prefix=f"/{prefix}")
 
     tus_version = "1.0.0"
@@ -46,10 +48,15 @@ def create_api_router(
         if not meta or not _file_exists(uuid):
             return False
 
+        # Flag to track if we processed any chunks
+        has_chunks = False
+
         with open(f"{files_dir}/{uuid}", "ab") as f:
             async for chunk in request.stream():
-                if post_request and chunk is None or len(chunk) == 0:
-                    return None
+                has_chunks = True
+                # Skip empty chunks but continue processing
+                if len(chunk) == 0:
+                    continue
 
                 if _get_file_length(uuid) + len(chunk) > max_size:
                     raise HTTPException(status_code=413)
@@ -61,6 +68,15 @@ def create_api_router(
                 _write_metadata(meta)
 
             f.close()
+
+        # For empty files in a POST request, we still want to return True
+        # to ensure _get_and_save_the_file gets called
+        if post_request and not has_chunks:
+            # Update metadata for empty file
+            meta.offset = 0
+            meta.upload_chunk_size = 0
+            meta.upload_part += 1
+            _write_metadata(meta)
 
         return True
 
@@ -86,7 +102,6 @@ def create_api_router(
     def upload_chunk(
         response: Response,
         uuid: str,
-        content_type: str = Header(None),
         content_length: int = Header(None),
         upload_offset: int = Header(None),
         _=Depends(_get_request_chunk),
@@ -95,9 +110,8 @@ def create_api_router(
         response_headers = _get_and_save_the_file(
             response,
             uuid,
-            content_type,
             content_length,
-            upload_offset,
+            upload_length=upload_offset,
         )
 
         return response_headers
@@ -119,6 +133,7 @@ def create_api_router(
         upload_metadata: str = Header(None),
         upload_length: int = Header(None),
         upload_defer_length: int = Header(None),
+        content_length: int = Header(None),
         _=Depends(auth),
     ) -> Response:
         if upload_defer_length is not None and upload_defer_length != 1:
@@ -147,19 +162,7 @@ def create_api_router(
             str(date_expiry.isoformat()),
         )
         _write_metadata(saved_meta_data)
-
         _initialize_file(uuid)
-
-        chunk: bool | None = await _get_request_chunk(request, uuid, True)
-        if chunk:
-            response = _get_and_save_the_file(
-                response,
-                uuid,
-            )
-            response.headers["Location"] = _build_location_url(
-                request=request, uuid=uuid
-            )
-            return response
 
         response.headers["Location"] = _build_location_url(request=request, uuid=uuid)
         response.headers["Tus-Resumable"] = tus_version
@@ -261,14 +264,9 @@ def create_api_router(
     def _get_and_save_the_file(
         response: Response,
         uuid: str,
-        content_type: str = Header(None),
         content_length: int = Header(None),
         upload_length: int = Header(None),
     ):
-        # Check if the Content-Type header is set to "application/offset+octet-stream"
-        if content_type != "application/offset+octet-stream":
-            raise HTTPException(status_code=415)
-
         meta = _read_metadata(uuid)
         # Check if the upload ID is valid
         if not meta or uuid != meta.uid:

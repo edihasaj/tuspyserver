@@ -43,7 +43,7 @@ def on_upload_complete(file_path: str, metadata: dict):
 app.include_router(
     create_api_router(
         files_dir='/tmp/different_dir', # OPTIONAL
-        max_size=128849018880, # OPTIONAL
+        max_size=128849018880, # OPTIONAL (in bytes)
         on_upload_complete=on_upload_complete, # OPTIONAL
         prefix="files"
     ),

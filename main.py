@@ -27,41 +27,25 @@ def on_your_specific_auth():
 app.include_router(
     create_api_router(
         files_dir="/tmp/different_dir",
-        location="http://127.0.0.1:8000/files",
         max_size=128849018880,
         on_upload_complete=on_upload_complete,
         auth=on_your_specific_auth,
-    ),
-    prefix="/files",
+        prefix="files",
+    )
 )
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=[
-        "Location",
-        "X-Filename",
-        "Tus-Resumable",
-        "Tus-Extension",
-        "Tus-Version",
-        "Tus-Max-Size",
-        "Upload-Expires",
-        "Upload-Metadata",
-        "Upload-Offset",
-        "Upload-Length",
-    ],
+    allow_headers=["*"],
     expose_headers=[
         "Location",
-        "X-Filename",
+        "Upload-Offset",
         "Tus-Resumable",
-        "Tus-Extension",
         "Tus-Version",
+        "Tus-Extension",
         "Tus-Max-Size",
         "Upload-Expires",
-        "Upload-Metadata",
-        "Upload-Offset",
-        "Upload-Length",
     ],
 )
