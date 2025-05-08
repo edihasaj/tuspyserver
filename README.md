@@ -132,12 +132,4 @@ scheduler.start()
 
 Contributions welcome! Please open issues or PRs on [GitHub](https://github.com/your-org/tuspyserver).
 
-## Buy Me a Coffee
-
-If you find this library useful, you can support development:
-
-[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-red.png)](https://www.buymeacoffee.com/edihasaj)
-
----
-
-*© 2025 Edi Hasaj*
+*© 2025 Edi Hasaj [X](https://x.com/hasajedi)*

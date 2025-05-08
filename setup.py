@@ -18,7 +18,7 @@ setup(
     long_description_content_type="text/markdown",
     author="Edi Hasaj",
     license="MIT",
-    author_email="edihasaj@gmail.com",
+    author_email="edi.hasaj@applifyer.com",
     url="https://github.com/edihasaj/tuspy-fast-api",
     packages=find_packages(),
     platforms="any",
