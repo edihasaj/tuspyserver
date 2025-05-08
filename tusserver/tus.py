@@ -31,6 +31,7 @@ def create_api_router(
     auth: Optional[Callable[[], None]] = default_auth,
     days_to_keep: int = 5,
     prefix: str = "files",
+    upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]] = None,
 ):
     if prefix and prefix[0] == "/":
         prefix = prefix[1:]
@@ -40,6 +41,13 @@ def create_api_router(
     tus_extension = (
         "creation,creation-defer-length,creation-with-upload,expiration,termination"
     )
+
+    if upload_complete_dep is None:
+
+        async def _fallback_on_complete_dep() -> Callable[[str, dict], None]:
+            return on_upload_complete or (lambda *_: None)
+
+        upload_complete_dep = _fallback_on_complete_dep
 
     async def _get_request_chunk(
         request: Request, uuid: str = Path(...), post_request: bool = False
@@ -106,15 +114,21 @@ def create_api_router(
         upload_offset: int = Header(None),
         _=Depends(_get_request_chunk),
         __=Depends(auth),
+        on_complete: Callable[[str, dict], None] = Depends(upload_complete_dep),
     ) -> Response:
-        response_headers = _get_and_save_the_file(
+        headers = _get_and_save_the_file(
             response,
             uuid,
             content_length,
             upload_length=upload_offset,
         )
 
-        return response_headers
+        meta = _read_metadata(uuid)
+        if meta and meta.size == meta.offset:
+            file_path = os.path.join(files_dir, uuid)
+            on_complete(file_path, meta.metadata)
+
+        return headers
 
     @router.options("/", status_code=status.HTTP_204_NO_CONTENT)
     def options_create_upload(response: Response, __=Depends(auth)) -> Response:
@@ -133,8 +147,8 @@ def create_api_router(
         upload_metadata: str = Header(None),
         upload_length: int = Header(None),
         upload_defer_length: int = Header(None),
-        content_length: int = Header(None),
         _=Depends(auth),
+        on_complete: Callable[[str, dict], None] = Depends(upload_complete_dep),
     ) -> Response:
         if upload_defer_length is not None and upload_defer_length != 1:
             raise HTTPException(status_code=400, detail="Invalid Upload-Defer-Length")
@@ -168,6 +182,12 @@ def create_api_router(
         response.headers["Tus-Resumable"] = tus_version
         response.headers["Content-Length"] = str(0)
         response.status_code = status.HTTP_201_CREATED
+
+        meta = _read_metadata(uuid)
+        if meta and meta.size == 0:
+            file_path = os.path.join(files_dir, uuid)
+            on_complete(file_path, meta.metadata)
+
         return response
 
     @router.options("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)

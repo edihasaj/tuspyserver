@@ -1,20 +1,34 @@
 # FastAPI Tus
 
-FastAPI Extension implementing the Tus.io server protocol
+A FastAPI extension implementing the [Tus.io](https://tus.io/) upload protocol, with optional dependency-injected hooks for post-upload processing.
 
-### Prerequisites `FastAPI`
+## Prerequisites
+
+* **Python** 3.8+
+* **FastAPI** 0.70+
+* **Starlette** (installed as FastAPI dependency)
 
 ## Installation
 
-Installation from PyPi repository (recommended for latest stable release)
+Install the latest stable release from PyPI:
 
-```
+```bash
 pip install tuspyserver
+```
+
+Or install directly from source:
+
+```bash
+git clone https://github.com/your-org/tuspyserver.git
+cd tuspyserver
+pip install .
 ```
 
 ## Usage
 
-### main.py
+### Basic setup
+
+In your `main.py`:
 
 ```python
 from fastapi import FastAPI
@@ -26,47 +40,104 @@ from tusserver.tus import create_api_router
 app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-
+# Optional: define a simple completion hook
 def on_upload_complete(file_path: str, metadata: dict):
-    print('Upload complete')
-    print(file_path)
-    print('Upload Metadata')
-    print(metadata)
+    print("Upload complete:", file_path)
+    print("Metadata:", metadata)
 
-
+# Include the router
 app.include_router(
     create_api_router(
-        files_dir='/tmp/different_dir', # OPTIONAL
-        max_size=128849018880, # OPTIONAL (in bytes)
-        on_upload_complete=on_upload_complete, # OPTIONAL
-        prefix="files"
+        files_dir="/tmp/uploads",        # OPTIONAL: directory to store files
+        max_size=128_849_018_880,         # OPTIONAL: max upload size in bytes (~120GB)
+        on_upload_complete=on_upload_complete,  # OPTIONAL: callback when upload finishes
+        prefix="files",                 # OPTIONAL: URL prefix (default: 'files')
     ),
 )
 ```
 
-This package has the ability to upload, download, delete (including a scheduler) files.
+### Dependency‑Injected Hook (Advanced)
 
-```python setup.py sdist bdist_wheel```
+For applications using FastAPI's dependency injection, you can supply a factory that returns a DI‑enabled callback. This factory can `Depends()` on any of your services (database session, current user, etc.).
 
+```python
+# Define a factory dependency that injects your own services
+from fastapi import Depends
+from your_app.dependencies import get_db, get_current_user
 
-### Versioning & Publishing
+def get_upload_handler(
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> Callable[[str, dict], None]:
+    def handler(file_path: str, metadata: dict):
+        # perform validation or post-processing
+        db.log_upload(current_user.id, metadata)
+        process_file(file_path)
+    return handler
 
-**Reminder:** Before pushing changes to the `main` branch, ensure that you increment the version number in `setup.py` according to the nature of your changes:
+# Include router with the DI hook
+app.include_router(
+    create_api_router(
+        on_upload_complete=None,            # keep default
+        upload_complete_dep=get_upload_handler,  # factory dependency
+    )
+)
+```
 
-- **Patch version** for minor bug fixes.
-- **Minor version** for new features or significant improvements.
-- **Major version** for breaking changes.
+### Features
 
-After committing your changes to the `main` branch, create a Pull Request (PR) to merge `main` into the `production` branch. Once merged, the package will automatically be published to PyPI via the configured CI/CD workflow.
+* **Resumable uploads** via TUS protocol
+* **Chunked transfer** with configurable max size
+* **Metadata storage** (filename, filetype)
+* **Expiration & cleanup** of old uploads (default retention: 5 days)
+* **Download**, **HEAD**, **DELETE**, and **OPTIONS** endpoints
+* **Optional** DI‑friendly `upload_complete_dep` for seamless integration with FastAPI
 
+## Scheduler (Cleanup)
 
-Any contribution is welcomed.
+Expired files are removed when `remove_expired_files()` is called. You can schedule it using your preferred background scheduler (e.g., `APScheduler`, `cron`).
 
-<a href="https://www.buymeacoffee.com/edihasaj" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-red.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
+```python
+from apscheduler.schedulers.background import BackgroundScheduler
 
+scheduler = BackgroundScheduler()
+scheduler.add_job(
+    lambda: router.remove_expired_files(),
+    trigger='cron',
+    hour=1,
+)
+scheduler.start()
+```
+
+## Versioning & Publishing
+
+**Before releasing:**
+
+1. Update the version in `setup.py`:
+
+   * **Patch** for bug fixes
+   * **Minor** for new features
+   * **Major** for breaking changes
+2. Commit and push to `main`.
+3. Open a PR to merge `main` → `production`.
+4. Upon merge, CI/CD will publish to PyPI.
+
+## Contributing
+
+Contributions welcome! Please open issues or PRs on [GitHub](https://github.com/your-org/tuspyserver).
+
+## Buy Me a Coffee
+
+If you find this library useful, you can support development:
+
+[![Buy Me A Coffee](https://cdn.buymeacoffee.com/buttons/v2/default-red.png)](https://www.buymeacoffee.com/edihasaj)
+
+---
+
+*© 2025 Edi Hasaj*
