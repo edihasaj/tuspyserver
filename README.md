@@ -19,8 +19,8 @@ pip install tuspyserver
 Or install directly from source:
 
 ```bash
-git clone https://github.com/your-org/tuspyserver.git
-cd tuspyserver
+git clone https://github.com/edihasaj/tuspy-fast-api
+cd tuspy-fast-api
 pip install .
 ```
 
@@ -130,6 +130,6 @@ scheduler.start()
 
 ## Contributing
 
-Contributions welcome! Please open issues or PRs on [GitHub](https://github.com/your-org/tuspyserver).
+Contributions welcome! Please open issues or PRs on [GitHub](https://github.com/edihasaj/tuspy-fast-api).
 
 *© 2025 Edi Hasaj [X](https://x.com/hasajedi)*
