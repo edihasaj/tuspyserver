@@ -43,6 +43,15 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+     "Location",
+     "Upload-Offset",
+     "Tus-Resumable",
+     "Tus-Version",
+     "Tus-Extension",
+     "Tus-Max-Size",
+     "Upload-Expires",
+    ],
 )
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -59,6 +68,27 @@ app.include_router(
         on_upload_complete=on_upload_complete,  # OPTIONAL: callback when upload finishes
         prefix="files",                 # OPTIONAL: URL prefix (default: 'files')
     ),
+)
+
+```
+
+### !Warning If you include your own router then it is necessary that your app allows these Headers:
+
+```python
+app.add_middleware( 
+   CORSMiddleware, (# OPTIONAL: add CORS middleware if needed)
+   allow_origins=["*"], # OPTIONAL: allow all origins
+   allow_methods=["*"], # OPTIONAL: allow all methods
+   allow_headers=["*"], # OPTIONAL: allow all headers
+   expose_headers=[ # REQUIRED: expose these headers to the client
+    "Location",
+    "Upload-Offset",
+    "Tus-Resumable",
+    "Tus-Version",
+    "Tus-Extension",
+    "Tus-Max-Size",
+    "Upload-Expires",
+   ],
 )
 ```
 

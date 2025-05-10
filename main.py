@@ -10,7 +10,17 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=[
+        "Location",
+        "Upload-Offset",
+        "Tus-Resumable",
+        "Tus-Version",
+        "Tus-Extension",
+        "Tus-Max-Size",
+        "Upload-Expires",
+    ],
 )
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
@@ -32,20 +42,4 @@ app.include_router(
         auth=on_your_specific_auth,
         prefix="files",
     )
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=[
-        "Location",
-        "Upload-Offset",
-        "Tus-Resumable",
-        "Tus-Version",
-        "Tus-Extension",
-        "Tus-Max-Size",
-        "Upload-Expires",
-    ],
 )
