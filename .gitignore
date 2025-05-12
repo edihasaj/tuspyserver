@@ -2,5 +2,7 @@ venv
 __pycache__
 dist
 build
-tuspy_fast_api.egg-info
+*.egg-info
 .pypirc
+
+.idea/*
