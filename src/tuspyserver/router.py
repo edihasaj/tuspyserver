@@ -18,20 +18,20 @@ from fastapi import (
 )
 from starlette.responses import FileResponse
 
-from tusserver.metadata import FileMetadata
+from tuspyserver.metadata import FileMetadata
 
 
-async def default_auth():
+async def noop():
     pass
 
 
-def create_api_router(
+def create_tus_router(
+    prefix: str = "files",
     files_dir="/tmp/files",
     max_size=128849018880,
-    on_upload_complete: Optional[Callable[[str, dict], None]] = None,
-    auth: Optional[Callable[[], None]] = default_auth,
+    auth: Optional[Callable[[], None]] = noop,
     days_to_keep: int = 5,
-    prefix: str = "files",
+    on_upload_complete: Optional[Callable[[str, dict], None]] = None,
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]] = None,
 ):
     if prefix and prefix[0] == "/":
@@ -356,11 +356,5 @@ def create_api_router(
     def _build_location_url(request: Request, uuid: str) -> str:
         proto, host = _get_host_and_proto(request=request)
         return f"{proto}://{host}/{prefix}/{uuid}"
-
-    # # Create a scheduler for deleting the files
-    # scheduler = sched.scheduler(time.time, time.sleep)
-    # run_time = time.mktime(time.strptime("01:00", "%H:%M"))
-    # scheduler.enterabs(run_time, 1, remove_expired_files)
-    # scheduler.run()
 
     return router
