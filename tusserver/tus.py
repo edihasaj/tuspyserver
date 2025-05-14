@@ -36,7 +36,7 @@ def create_api_router(
 ):
     if prefix and prefix[0] == "/":
         prefix = prefix[1:]
-    router = APIRouter(prefix=f"/{prefix}")
+    router = APIRouter(prefix=f"/{prefix}", redirect_slashes=True)
 
     tus_version = "1.0.0"
     tus_extension = (
@@ -144,6 +144,7 @@ def create_api_router(
         response.status_code = status.HTTP_204_NO_CONTENT
         return response
 
+    @router.post("", status_code=status.HTTP_201_CREATED)
     @router.post("/", status_code=status.HTTP_201_CREATED)
     async def create_upload(
         request: Request,
