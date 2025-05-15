@@ -1,0 +1,13 @@
+[project]
+name = "tuspyserver_examples"
+version = "0.1.0"
+description = "An examples showing how to use the tuspyserver library"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "tuspyserver>=3.0",
+  "uvicorn>=0.34.2",
+]
+
+[tool.uv.sources]
+tuspyserver = { workspace = true }
