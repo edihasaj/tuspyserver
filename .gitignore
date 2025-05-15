@@ -6,3 +6,6 @@ build
 .pypirc
 
 .idea/*
+
+.venv
+uploads/*
