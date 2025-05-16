@@ -27,7 +27,7 @@ app.add_middleware(
 )
 
 # serve an html frontend from the static folder
-app.mount("/static", StaticFiles(directory="examples/static"), name="static")
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 # use completion hook to log uploads
