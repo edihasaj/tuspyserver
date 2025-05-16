@@ -33,10 +33,11 @@ def create_tus_router(
     days_to_keep: int = 5,
     on_upload_complete: Optional[Callable[[str, dict], None]] = None,
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]] = None,
+    tags: Optional[list[str]] = None
 ):
     if prefix and prefix[0] == "/":
         prefix = prefix[1:]
-    router = APIRouter(prefix=f"/{prefix}", redirect_slashes=True)
+    router = APIRouter(prefix=f"/{prefix}", redirect_slashes=True, tags=tags if tags else ["Tus"])
 
     tus_version = "1.0.0"
     tus_extension = (
