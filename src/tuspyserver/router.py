@@ -101,10 +101,34 @@ def create_tus_router(
         response.headers["Upload-Length"] = str(meta.size)
         response.headers["Upload-Offset"] = str(meta.offset)
         response.headers["Cache-Control"] = "no-store"
+
+        if "filename" in meta.metadata:
+            fn = meta.metadata["filename"]
+        elif "name" in meta.metadata:
+            fn = meta.metadata["name"]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Upload-Metadata missing required field: filename"
+            )
+
+        if "filetype" in meta.metadata:
+            ft = meta.metadata["filetype"]
+        elif "type" in meta.metadata:
+            ft = meta.metadata["type"]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Upload-Metadata missing required field: filetype"
+            )
+
+        def b64(s: str) -> str:
+            return base64.b64encode(s.encode("utf-8")).decode("ascii")
+
         response.headers["Upload-Metadata"] = (
-            f"filename {base64.b64encode(bytes(meta.metadata['name'], 'utf-8'))}, "
-            f"filetype {base64.b64encode(bytes(meta.metadata['type'], 'utf-8'))}"
+            f"filename {b64(fn)}, filetype {b64(ft)}"
         )
+
         response.status_code = status.HTTP_200_OK
         return response
 
