@@ -3,6 +3,7 @@ import inspect
 import json
 import os
 from datetime import datetime, timedelta
+from json import JSONDecodeError
 from typing import Callable, Optional
 from uuid import uuid4
 
@@ -18,25 +19,26 @@ from fastapi import (
 )
 from starlette.responses import FileResponse
 
-from tusserver.metadata import FileMetadata
+from tuspyserver.metadata import FileMetadata
 
 
-async def default_auth():
+async def noop():
     pass
 
 
-def create_api_router(
+def create_tus_router(
+    prefix: str = "files",
     files_dir="/tmp/files",
     max_size=128849018880,
-    on_upload_complete: Optional[Callable[[str, dict], None]] = None,
-    auth: Optional[Callable[[], None]] = default_auth,
+    auth: Optional[Callable[[], None]] = noop,
     days_to_keep: int = 5,
-    prefix: str = "files",
+    on_upload_complete: Optional[Callable[[str, dict], None]] = None,
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]] = None,
+    tags: Optional[list[str]] = None
 ):
     if prefix and prefix[0] == "/":
         prefix = prefix[1:]
-    router = APIRouter(prefix=f"/{prefix}", redirect_slashes=True)
+    router = APIRouter(prefix=f"/{prefix}", redirect_slashes=True, tags=tags if tags else ["Tus"])
 
     tus_version = "1.0.0"
     tus_extension = (
@@ -95,15 +97,49 @@ def create_api_router(
         if meta is None or not _file_exists(uuid):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
+        if meta.error:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=meta.error,
+            )
+
+        if meta.size == meta.offset:
+            _delete_files(uuid)
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
+
         response.headers["Tus-Resumable"] = tus_version
         response.headers["Content-Length"] = str(meta.size)
         response.headers["Upload-Length"] = str(meta.size)
         response.headers["Upload-Offset"] = str(meta.offset)
         response.headers["Cache-Control"] = "no-store"
+
+        if "filename" in meta.metadata:
+            fn = meta.metadata["filename"]
+        elif "name" in meta.metadata:
+            fn = meta.metadata["name"]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Upload-Metadata missing required field: filename"
+            )
+
+        if "filetype" in meta.metadata:
+            ft = meta.metadata["filetype"]
+        elif "type" in meta.metadata:
+            ft = meta.metadata["type"]
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Upload-Metadata missing required field: filetype"
+            )
+
+        def b64(s: str) -> str:
+            return base64.b64encode(s.encode("utf-8")).decode("ascii")
+
         response.headers["Upload-Metadata"] = (
-            f"filename {base64.b64encode(bytes(meta.metadata['name'], 'utf-8'))}, "
-            f"filetype {base64.b64encode(bytes(meta.metadata['type'], 'utf-8'))}"
+            f"filename {b64(fn)}, filetype {b64(ft)}"
         )
+
         response.status_code = status.HTTP_200_OK
         return response
 
@@ -260,11 +296,16 @@ def create_api_router(
 
     def _read_metadata(uid: str) -> FileMetadata | None:
         fpath = os.path.join(files_dir, f"{uid}.info")
-        if os.path.exists(fpath):
-            with open(fpath, "r") as f:
-                return FileMetadata(**json.load(f))
+        if not os.path.exists(fpath):
+            return None
 
-        return None
+        try:
+            with open(fpath, "r") as f:
+                data = json.load(f)  # if this fails, we’ll catch below
+            return FileMetadata(**data)
+        except (JSONDecodeError, TypeError, OSError):
+            # If the file exists but is empty/invalid, treat it as “no metadata.”
+            return None
 
     def _get_file(uid: str) -> bytes | None:
         fpath = os.path.join(files_dir, uid)
@@ -356,11 +397,5 @@ def create_api_router(
     def _build_location_url(request: Request, uuid: str) -> str:
         proto, host = _get_host_and_proto(request=request)
         return f"{proto}://{host}/{prefix}/{uuid}"
-
-    # # Create a scheduler for deleting the files
-    # scheduler = sched.scheduler(time.time, time.sleep)
-    # run_time = time.mktime(time.strptime("01:00", "%H:%M"))
-    # scheduler.enterabs(run_time, 1, remove_expired_files)
-    # scheduler.run()
 
     return router

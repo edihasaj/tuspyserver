@@ -12,7 +12,7 @@ class FileMetadata(BaseModel):
     created_at: str
     defer_length: bool
     upload_chunk_size: int = 0
-    expires: str | None
+    expires: float | str | None
 
     @classmethod
     def from_request(
@@ -22,7 +22,7 @@ class FileMetadata(BaseModel):
         size: int,
         created_at: str,
         defer_length: bool,
-        expires: str,
+        expires: float | str | None,
     ):
         return FileMetadata(
             uid=uid,
