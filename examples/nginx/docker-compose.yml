@@ -1,0 +1,29 @@
+services:
+  fastapi-server:
+    build: .
+    container_name: tus-fastapi-server
+    volumes:
+      - ./uploads:/app/uploads
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - tus-network
+    expose:
+      - "8000"
+
+  nginx-reverse-proxy:
+    image: nginx:alpine
+    container_name: tus-nginx-proxy
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./static:/usr/share/nginx/html/static:ro
+    depends_on:
+      - fastapi-server
+    networks:
+      - tus-network
+
+networks:
+  tus-network:
+    driver: bridge

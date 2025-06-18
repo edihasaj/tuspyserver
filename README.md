@@ -161,7 +161,10 @@ scheduler.add_job(
 scheduler.start()
 ```
 
-## Example
+## Examples
+
+
+### Basic: uvicorn (requires uv)
 
 You can find a complete working basic example in the [examples](https://github/edihasaj/tuspyserver/tree/main/examples) folder.
 
@@ -180,6 +183,49 @@ uv run basic.py
 This should launch the server, and you should now be able to test uploads by browsing to http://localhost:8000/static/index.html.
 
 Uploaded files get placed in the `examples/uploads` folder.
+
+### Advanced: nginx reverse proxy (requires docker)
+
+This example demonstrates a production-ready setup with:
+- FastAPI server running in a Docker container
+- Nginx reverse proxy for handling client requests
+- Proper header configuration for TUS protocol
+- Volume mounting for persistent storage
+
+#### Running
+
+Prerequisites:
+- Docker and Docker Compose installed
+- Port 80 available on your host machine
+
+Navigate to the `examples/advanced` directory and use [`docker compose`](https://docs.docker.com/reference/cli/docker/compose/) to run it.
+
+#### Architecture
+
+The architecture looks like this:
+
+```
+Client Browser
+     ↓
+Nginx (port 80)
+     ↓
+FastAPI Server (port 8000)
+     ↓
+Volume Mount (./uploads)
+```
+
+#### Configuration
+
+##### Nginx Configuration
+- Disables request buffering for efficient chunked uploads
+- Passes through all required TUS headers
+- Configured with appropriate timeouts for large files
+- Serves static files directly
+
+##### FastAPI Server
+- Runs in a Docker container
+- Uploads stored in `/app/uploads` (mounted to `./uploads` on host)
+- CORS configured for cross-origin requests
 
 ## Developing
 

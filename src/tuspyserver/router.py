@@ -143,28 +143,28 @@ def create_tus_router(
         file = TusUploadFile(uid=uuid, options=options)
 
         # check if the upload ID is valid
-        if not file.params or uuid != meta.uid:
+        if not file.params or uuid != file.uid:
             raise HTTPException(status_code=404)
 
         # check if the Upload Offset with Content-Length header is correct
-        if file.params.offset != upload_length + content_length:
+        if file.params.offset != upload_offset + content_length:
             raise HTTPException(status_code=409)
 
         # init copy of params to update
         new_params = file.params
 
         if file.params.defer_length:
-            new_params.size = upload_length
+            new_params.size = upload_offset
 
         if not file.params.expires:
-            date_expiry = datetime.now() + timedelta(days=self.options.days_to_keep)
+            date_expiry = datetime.now() + timedelta(days=options.days_to_keep)
             new_params.expires = str(date_expiry.isoformat())
 
         # save param changes
         file.params = new_params
 
         if file.params.size == file.params.offset:
-            response.headers["Tus-Resumable"] = self.options.tus_version
+            response.headers["Tus-Resumable"] = options.tus_version
             response.headers["Upload-Offset"] = str(
                 str(file.params.offset)
                 if file.params.offset > 0
@@ -178,7 +178,7 @@ def create_tus_router(
                     file.params.file.paramsdata,
                 )
         else:
-            response.headers["Tus-Resumable"] = self.options.tus_version
+            response.headers["Tus-Resumable"] = options.tus_version
             response.headers["Upload-Offset"] = str(file.params.offset)
             response.headers["Upload-Expires"] = str(file.params.expires)
             response.status_code = status.HTTP_204_NO_CONTENT
@@ -242,16 +242,16 @@ def create_tus_router(
         # create the file
         file = TusUploadFile(options=options, params=params)
         # update request headers
-        response.headers["Location"] = get_request_headers(request=request, uuid=uuid)[
-            "location"
-        ]
+        response.headers["Location"] = get_request_headers(
+            request=request, uuid=file.uid
+        )["location"]
         response.headers["Tus-Resumable"] = options.tus_version
         response.headers["Content-Length"] = str(0)
         # set status code
         response.status_code = status.HTTP_201_CREATED
         # run completion hooks
         if file.params and file.params.size == 0:
-            file_path = os.path.join(options.files_dir, uuid)
+            file_path = os.path.join(options.files_dir, file.uid)
             result = on_complete(file_path, file.params.metadata)
             # if the callback returned a coroutine, await it
             if inspect.isawaitable(result):
@@ -311,9 +311,9 @@ def create_tus_router(
         return FileResponse(
             os.path.join(options.files_dir, uuid),
             media_type="application/octet-stream",
-            filename=meta.metadata["name"],
+            filename=file.info.metadata["name"],
             headers={
-                "Content-Length": str(meta.offset),
+                "Content-Length": str(file.info.offset),
                 "Tus-Resumable": options.tus_version,
             },
         )

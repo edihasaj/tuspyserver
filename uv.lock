@@ -5,7 +5,8 @@ requires-python = ">=3.12"
 [manifest]
 members = [
     "tuspyserver",
-    "tuspyserver-examples",
+    "tuspyserver-example-basic",
+    "tuspyserver-example-nginx",
 ]
 
 [[package]]
@@ -174,9 +175,9 @@ dependencies = [
 requires-dist = [{ name = "fastapi", specifier = ">=0.110.0" }]
 
 [[package]]
-name = "tuspyserver-examples"
-version = "0.1.0"
-source = { virtual = "examples" }
+name = "tuspyserver-example-basic"
+version = "4.0.0"
+source = { virtual = "examples/basic" }
 dependencies = [
     { name = "tuspyserver" },
     { name = "uvicorn" },
@@ -186,6 +187,23 @@ dependencies = [
 requires-dist = [
     { name = "tuspyserver", editable = "." },
     { name = "uvicorn", specifier = ">=0.34.2" },
+]
+
+[[package]]
+name = "tuspyserver-example-nginx"
+version = "0.1.0"
+source = { virtual = "examples/nginx" }
+dependencies = [
+    { name = "fastapi" },
+    { name = "tuspyserver" },
+    { name = "uvicorn" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", specifier = ">=0.110.0" },
+    { name = "tuspyserver", editable = "." },
+    { name = "uvicorn", specifier = ">=0.20.0" },
 ]
 
 [[package]]
