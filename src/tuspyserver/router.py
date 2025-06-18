@@ -1,25 +1,38 @@
 import base64
 import inspect
-import json
 import os
 from datetime import datetime, timedelta
 from typing import Callable, Optional
-from uuid import uuid4
+
+from pydantic import BaseModel
 
 from fastapi import (
     APIRouter,
     Depends,
     Header,
     HTTPException,
-    Path,
     Request,
     Response,
     status,
 )
-from starlette.responses import FileResponse
+from fastapi.responses import FileResponse
 
-from tuspyserver.metadata import FileMetadata
-from tuspyserver.options import init_tus_options
+
+from tuspyserver.file import TusUploadFile, TusUploadParams
+from tuspyserver.request import get_request_headers, get_request_chunks
+
+
+class TusRouterOptions(BaseModel):
+    prefix: str
+    files_dir: str
+    max_size: int
+    auth: Callable[[], None] | None
+    days_to_keep: int
+    on_upload_complete: Callable[[str, dict], None] | None
+    upload_complete_dep: Callable[..., Callable[[str, dict], None]] | None
+    tags: list[str] | None
+    tus_version: str
+    tus_extension: str
 
 
 async def noop():
@@ -36,7 +49,14 @@ def create_tus_router(
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]] = None,
     tags: Optional[list[str]] = None,
 ):
-    options = init_tus_options(
+    if prefix and prefix[0] == "/":
+        prefix = prefix[1:]
+
+    upload_complete_dep = upload_complete_dep or (
+        lambda _: on_upload_complete or (lambda *_: None)
+    )
+
+    options = TusRouterOptions(
         prefix=prefix,
         files_dir=files_dir,
         max_size=max_size,
@@ -46,13 +66,15 @@ def create_tus_router(
         upload_complete_dep=upload_complete_dep,
         tags=tags,
         tus_version="1.0.0",
-        tus_extension=[
-            "creation",
-            "creation-defer-length",
-            "creation-with-upload",
-            "expiration",
-            "termination",
-        ],
+        tus_extension=",".join(
+            [
+                "creation",
+                "creation-defer-length",
+                "creation-with-upload",
+                "expiration",
+                "termination",
+            ]
+        ),
     )
 
     router = APIRouter(
@@ -61,73 +83,38 @@ def create_tus_router(
         tags=options.tags or ["Tus"],
     )
 
-    async def _get_request_chunk(
-        request: Request, uuid: str = Path(...), post_request: bool = False
-    ) -> bool | None:
-        meta = _read_metadata(uuid)
-        if not meta or not _file_exists(uuid):
-            return False
+    # CORE ROUTES
 
-        # Flag to track if we processed any chunks
-        has_chunks = False
-
-        with open(f"{options.files_dir}/{uuid}", "ab") as f:
-            async for chunk in request.stream():
-                has_chunks = True
-                # Skip empty chunks but continue processing
-                if len(chunk) == 0:
-                    continue
-
-                if _get_file_length(uuid) + len(chunk) > options.max_size:
-                    raise HTTPException(status_code=413)
-
-                f.write(chunk)
-                meta.offset += len(chunk)
-                meta.upload_chunk_size = len(chunk)
-                meta.upload_part += 1
-                _write_metadata(meta)
-
-            f.close()
-
-        # For empty files in a POST request, we still want to return True
-        # to ensure _get_and_save_the_file gets called
-        if post_request and not has_chunks:
-            # Update metadata for empty file
-            meta.offset = 0
-            meta.upload_chunk_size = 0
-            meta.upload_part += 1
-            _write_metadata(meta)
-
-        return True
-
+    # inform client of upload status
     @router.head("/{uuid}", status_code=status.HTTP_200_OK)
-    def get_upload_metadata(
+    def core_head_route(
         response: Response, uuid: str, _=Depends(options.auth)
     ) -> Response:
-        meta = _read_metadata(uuid)
-        if meta is None or not _file_exists(uuid):
+        file = TusUploadFile(uid=uuid, options=options)
+
+        if file.options is None or not file.exists:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-        response.headers["Tus-Resumable"] = options.tus_version
-        response.headers["Content-Length"] = str(meta.size)
-        response.headers["Upload-Length"] = str(meta.size)
-        response.headers["Upload-Offset"] = str(meta.offset)
+        response.headers["Tus-Resumable"] = file.options.tus_version
+        response.headers["Content-Length"] = str(file.info.size)
+        response.headers["Upload-Length"] = str(file.info.size)
+        response.headers["Upload-Offset"] = str(file.info.offset)
         response.headers["Cache-Control"] = "no-store"
 
-        if "filename" in meta.metadata:
-            fn = meta.metadata["filename"]
-        elif "name" in meta.metadata:
-            fn = meta.metadata["name"]
+        if "filename" in file.info.metadata:
+            fn = file.info.metadata["filename"]
+        elif "name" in file.info.metadata:
+            fn = file.info.metadata["name"]
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Upload-Metadata missing required field: filename",
+                detail="Upload-file.metadata missing required field: filename",
             )
 
-        if "filetype" in meta.metadata:
-            ft = meta.metadata["filetype"]
-        elif "type" in meta.metadata:
-            ft = meta.metadata["type"]
+        if "filetype" in file.info.metadata:
+            ft = file.info.metadata["filetype"]
+        elif "type" in file.info.metadata:
+            ft = file.info.metadata["type"]
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -142,46 +129,85 @@ def create_tus_router(
         response.status_code = status.HTTP_200_OK
         return response
 
+    # allow client to upload a chunk
     @router.patch("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
-    async def upload_chunk(
+    async def core_patch_route(
         response: Response,
         uuid: str,
         content_length: int = Header(None),
         upload_offset: int = Header(None),
-        _=Depends(_get_request_chunk),
+        _=Depends(get_request_chunks),
         __=Depends(options.auth),
         on_complete: Callable[[str, dict], None] = Depends(options.upload_complete_dep),
     ) -> Response:
-        headers = _get_and_save_the_file(
-            response,
-            uuid,
-            content_length,
-            upload_length=upload_offset,
-        )
+        file = TusUploadFile(uid=uuid, options=options)
 
-        meta = _read_metadata(uuid)
-        if meta and meta.size == meta.offset:
+        # check if the upload ID is valid
+        if not file.params or uuid != meta.uid:
+            raise HTTPException(status_code=404)
+
+        # check if the Upload Offset with Content-Length header is correct
+        if file.params.offset != upload_length + content_length:
+            raise HTTPException(status_code=409)
+
+        # init copy of params to update
+        new_params = file.params
+
+        if file.params.defer_length:
+            new_params.size = upload_length
+
+        if not file.params.expires:
+            date_expiry = datetime.now() + timedelta(days=self.options.days_to_keep)
+            new_params.expires = str(date_expiry.isoformat())
+
+        # save param changes
+        file.params = new_params
+
+        if file.params.size == file.params.offset:
+            response.headers["Tus-Resumable"] = self.options.tus_version
+            response.headers["Upload-Offset"] = str(
+                str(file.params.offset)
+                if file.params.offset > 0
+                else str(content_length)
+            )
+            response.headers["Upload-Expires"] = str(file.params.expires)
+            response.status_code = status.HTTP_204_NO_CONTENT
+            if options.on_upload_complete:
+                options.on_upload_complete(
+                    os.path.join(options.files_dir, f"{uuid}"),
+                    file.params.file.paramsdata,
+                )
+        else:
+            response.headers["Tus-Resumable"] = self.options.tus_version
+            response.headers["Upload-Offset"] = str(file.params.offset)
+            response.headers["Upload-Expires"] = str(file.params.expires)
+            response.status_code = status.HTTP_204_NO_CONTENT
+
+        if file.params and file.params.size == file.params.offset:
             file_path = os.path.join(options.files_dir, uuid)
-            result = on_complete(file_path, meta.metadata)
+            result = on_complete(file_path, file.params.file.paramsdata)
             # if the callback returned a coroutine, await it
             if inspect.isawaitable(result):
                 await result
 
-        return headers
+        return response
 
     @router.options("/", status_code=status.HTTP_204_NO_CONTENT)
-    def options_create_upload(response: Response, __=Depends(auth)) -> Response:
+    def core_options_route(response: Response, __=Depends(auth)) -> Response:
+        # create response headers
         response.headers["Tus-Extension"] = options.tus_extension
         response.headers["Tus-Resumable"] = options.tus_version
         response.headers["Tus-Version"] = options.tus_version
         response.headers["Tus-Max-Size"] = str(options.max_size)
         response.headers["Content-Length"] = str(0)
         response.status_code = status.HTTP_204_NO_CONTENT
+
         return response
 
-    @router.post("", status_code=status.HTTP_201_CREATED)
+    # EXTENSION ROUTES
+
     @router.post("/", status_code=status.HTTP_201_CREATED)
-    async def create_upload(
+    async def extension_creation_route(
         request: Request,
         response: Response,
         upload_metadata: str = Header(None),
@@ -190,12 +216,12 @@ def create_tus_router(
         _=Depends(auth),
         on_complete: Callable[[str, dict], None] = Depends(options.upload_complete_dep),
     ) -> Response:
+        # validate upload defer length
         if upload_defer_length is not None and upload_defer_length != 1:
             raise HTTPException(status_code=400, detail="Invalid Upload-Defer-Length")
-
-        defer_length = upload_defer_length is not None
-
-        # Create a new upload and store the file and metadata in the mapping
+        # set expiry date
+        date_expiry = datetime.now() + timedelta(days=options.days_to_keep)
+        # create upload metadata
         metadata = {}
         if upload_metadata is not None and upload_metadata != "":
             # Decode the base64-encoded string
@@ -203,57 +229,82 @@ def create_tus_router(
                 key, value = kv.rsplit(" ", 1)
                 decoded_value = base64.b64decode(value.strip()).decode("utf-8")
                 metadata[key.strip()] = decoded_value
-
-        uuid = str(uuid4().hex)
-
-        date_expiry = datetime.now() + timedelta(days=options.days_to_keep)
-        saved_meta_data = FileMetadata.from_request(
-            uuid,
-            metadata,
-            upload_length,
-            str(datetime.now()),
-            defer_length,
-            str(date_expiry.isoformat()),
+        # create upload params
+        params = TusUploadParams(
+            metadata=metadata,
+            size=upload_length,
+            offset=0,
+            upload_part=0,
+            created_at=str(datetime.now()),
+            defer_length=upload_defer_length is not None,
+            expires=str(date_expiry.isoformat()),
         )
-        _write_metadata(saved_meta_data)
-        _initialize_file(uuid)
-
-        response.headers["Location"] = _build_location_url(request=request, uuid=uuid)
+        # create the file
+        file = TusUploadFile(options=options, params=params)
+        # update request headers
+        response.headers["Location"] = get_request_headers(request=request, uuid=uuid)[
+            "location"
+        ]
         response.headers["Tus-Resumable"] = options.tus_version
         response.headers["Content-Length"] = str(0)
+        # set status code
         response.status_code = status.HTTP_201_CREATED
-
-        meta = _read_metadata(uuid)
-        if meta and meta.size == 0:
+        # run completion hooks
+        if file.params and file.params.size == 0:
             file_path = os.path.join(options.files_dir, uuid)
-            result = on_complete(file_path, meta.metadata)
+            result = on_complete(file_path, file.params.metadata)
             # if the callback returned a coroutine, await it
             if inspect.isawaitable(result):
                 await result
 
         return response
 
+    @router.delete("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
+    def extension_termination_route(
+        uuid: str, response: Response, _=Depends(auth)
+    ) -> Response:
+        file = TusUploadFile(uid=uuid, options=options)
+
+        # Check if the upload ID is valid
+        if not file.exists:
+            raise HTTPException(status_code=404, detail="Upload not found")
+
+        # Delete the file and metadata for the upload from the mapping
+        file.delete()
+
+        # Return a 204 No Content response
+        response.headers["Tus-Resumable"] = options.tus_version
+        response.status_code = status.HTTP_204_NO_CONTENT
+
+        return response
+
+    # UNKNOWN
+
     @router.options("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
     def options_upload_chunk(
         response: Response, uuid: str, _=Depends(auth)
     ) -> Response:
-        meta = _read_metadata(uuid)
-        if meta is None or not _file_exists(uuid):
+        file = TusUploadFile(uid=uuid, options=options)
+
+        # validate
+        if file.info is None or not file.exists:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
+        # write response headers
         response.headers["Tus-Extension"] = options.tus_extension
         response.headers["Tus-Resumable"] = options.tus_version
         response.headers["Tus-Version"] = options.tus_version
         response.headers["Content-Length"] = str(0)
         response.status_code = status.HTTP_204_NO_CONTENT
+
         return response
 
     @router.get("/{uuid}")
-    def get_upload(uuid: str) -> FileResponse:
-        meta = _read_metadata(uuid)
+    def extension_get_upload(uuid: str) -> FileResponse:
+        file = TusUploadFile(uid=uuid, options=options)
 
         # Check if the upload ID is valid
-        if not meta or uuid != meta.uid or not _file_exists(uuid):
+        if not file.info or not file.exists:
             raise HTTPException(status_code=404, detail="Upload not found")
 
         # Return the file in the response
@@ -266,135 +317,5 @@ def create_tus_router(
                 "Tus-Resumable": options.tus_version,
             },
         )
-
-    @router.delete("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
-    def delete_upload(uuid: str, response: Response, _=Depends(auth)) -> Response:
-        meta = _read_metadata(uuid)
-
-        # Check if the upload ID is valid
-        if not meta or uuid != meta.uid or not _file_exists(uuid):
-            raise HTTPException(status_code=404, detail="Upload not found")
-
-        # Delete the file and metadata for the upload from the mapping
-        _delete_files(uuid)
-
-        # Return a 204 No Content response
-        response.headers["Tus-Resumable"] = options.tus_version
-        response.status_code = status.HTTP_204_NO_CONTENT
-        return response
-
-    def _write_metadata(meta: FileMetadata) -> None:
-        if not os.path.exists(options.files_dir):
-            os.makedirs(options.files_dir)
-
-        with open(os.path.join(options.files_dir, f"{meta.uid}.info"), "w") as f:
-            f.write(json.dumps(meta, indent=4, default=lambda k: k.__dict__))
-
-    def _initialize_file(uid: str) -> None:
-        if not os.path.exists(options.files_dir):
-            os.makedirs(options.files_dir)
-
-        open(os.path.join(options.files_dir, f"{uid}"), "a").close()
-
-    def _read_metadata(uid: str) -> FileMetadata | None:
-        fpath = os.path.join(options.files_dir, f"{uid}.info")
-        if os.path.exists(fpath):
-            with open(fpath, "r") as f:
-                return FileMetadata(**json.load(f))
-
-        return None
-
-    def _get_file(uid: str) -> bytes | None:
-        fpath = os.path.join(options.files_dir, uid)
-        if os.path.exists(fpath):
-            with open(fpath, "rb") as f:
-                return f.read()
-
-        return None
-
-    def _file_exists(uid: str) -> bool:
-        return os.path.exists(os.path.join(options.files_dir, uid))
-
-    def _get_file_length(uid: str) -> int:
-        return os.path.getsize(os.path.join(options.files_dir, uid))
-
-    def _delete_files(uid: str) -> None:
-        fpath = os.path.join(options.files_dir, uid)
-        if os.path.exists(fpath):
-            os.remove(fpath)
-
-        meta_path = os.path.join(options.files_dir, f"{uid}.info")
-        if os.path.exists(meta_path):
-            os.remove(meta_path)
-
-    def _get_and_save_the_file(
-        response: Response,
-        uuid: str,
-        content_length: int = Header(None),
-        upload_length: int = Header(None),
-    ):
-        meta = _read_metadata(uuid)
-        # Check if the upload ID is valid
-        if not meta or uuid != meta.uid:
-            raise HTTPException(status_code=404)
-
-        # Check if the Upload Offset with Content-Length header is correct
-        if meta.offset != upload_length + content_length:
-            raise HTTPException(status_code=409)
-
-        if meta.defer_length:
-            meta.size = upload_length
-
-        if not meta.expires:
-            date_expiry = datetime.now() + timedelta(days=options.days_to_keep)
-            meta.expires = str(date_expiry.isoformat())
-        _write_metadata(meta)
-
-        if meta.size == meta.offset:
-            response.headers["Tus-Resumable"] = options.tus_version
-            response.headers["Upload-Offset"] = str(
-                str(meta.offset) if meta.offset > 0 else str(content_length)
-            )
-            response.headers["Upload-Expires"] = str(meta.expires)
-            response.status_code = status.HTTP_204_NO_CONTENT
-            if options.on_upload_complete:
-                options.on_upload_complete(
-                    os.path.join(options.files_dir, f"{uuid}"), meta.metadata
-                )
-
-            return response
-
-        response.headers["Tus-Resumable"] = options.tus_version
-        response.headers["Upload-Offset"] = str(meta.offset)
-        response.headers["Upload-Expires"] = str(meta.expires)
-        response.status_code = status.HTTP_204_NO_CONTENT
-        return response
-
-    def remove_expired_files():
-        file_list = os.listdir(options.files_dir)
-
-        file_list_to_remove = []
-
-        for f in file_list:
-            if len(f) == 32:
-                file_list_to_remove.append(f)
-
-        for f in file_list_to_remove:
-            meta = _read_metadata(f)
-            if meta.expires and datetime.fromisoformat(meta.expires) < datetime.now():
-                _delete_files(f)
-
-    def _get_host_and_proto(request: Request) -> tuple:
-        proto = "http"
-        host = request.headers.get("host")
-        if request.headers.get("X-Forwarded-Proto") is not None:
-            proto = request.headers.get("X-Forwarded-Proto")
-        if request.headers.get("X-Forwarded-Host") is not None:
-            host = request.headers.get("X-Forwarded-Host")
-        return proto, host
-
-    def _build_location_url(request: Request, uuid: str) -> str:
-        proto, host = _get_host_and_proto(request=request)
-        return f"{proto}://{host}/{options.prefix}/{uuid}"
 
     return router
