@@ -1,6 +1,8 @@
 services:
   fastapi-server:
-    build: .
+    build:
+      context: ../..
+      dockerfile: ./examples/nginx/Dockerfile
     container_name: tus-fastapi-server
     volumes:
       - ./uploads:/app/uploads

@@ -72,10 +72,10 @@ class TusUploadFile:
         if os.path.exists(meta_path):
             os.remove(meta_path)
 
-    def __len__(self, uid: str) -> int:
-        return os.path.getsize(os.path.join(self._options.files_dir, uid))
-
-    # info
+    def __len__(self) -> int:
+        if self.exists:
+            return os.path.getsize(os.path.join(self._options.files_dir, self.uid))
+        return 0
 
 
 def gc_files(options: TusRouterOptions):
@@ -83,9 +83,10 @@ def gc_files(options: TusRouterOptions):
     uids = [f for f in os.listdir(options.files_dir) if len(f) == 32]
 
     for uid in uids:
-        file = TusUploadFile(uid=uid)
+        file = TusUploadFile(uid=uid, options=options)
         if (
-            file.params.expires
-            and datetime.fromisoformat(file.info.expires) < datetime.now()
+            file.info
+            and file.info.expires
+            and datetime.datetime.fromisoformat(file.info.expires) < datetime.datetime.now()
         ):
-            file.delete()
+            file.delete(uid)

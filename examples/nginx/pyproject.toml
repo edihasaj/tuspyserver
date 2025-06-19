@@ -9,5 +9,8 @@ dependencies = [
     "tuspyserver>=4.0.0",
 ]
 
+[project.scripts]
+server = "server:app"
+
 [tool.uv.sources]
 tuspyserver = { workspace = true }
