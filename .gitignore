@@ -5,7 +5,7 @@ build
 *.egg-info
 .pypirc
 
+.aider*
 .idea/*
 
 .venv
-uploads/*

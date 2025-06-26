@@ -1,0 +1,23 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: example/backend/Dockerfile
+    volumes:
+      - ./backend/uploads:/app/example/backend/uploads
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+    depends_on:
+      - nginx
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - backend

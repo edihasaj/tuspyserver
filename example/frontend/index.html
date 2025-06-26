@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <title>Uppy</title>
-  <link href="https://releases.transloadit.com/uppy/v3.3.1/uppy.min.css" rel="stylesheet">
+  <link href="https://releases.transloadit.com/uppy/v4.13.3/uppy.min.css" rel="stylesheet">
 </head>
 
 <body>
@@ -14,20 +14,23 @@
   <div id="drag-drop-area"></div>
 
   <script type="module">
+    const url = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'
+    console.log(`Resolved API url: ${url}`)
     import {
       Uppy, Dashboard, Tus
-    } from "https://releases.transloadit.com/uppy/v3.3.1/uppy.min.mjs"
+    } from "https://releases.transloadit.com/uppy/v4.13.3/uppy.min.mjs"
     const uppy = new Uppy()
       .use(Dashboard, {
         inline: true,
         target: '#drag-drop-area'
       })
       .use(Tus, {
-        endpoint: 'http://127.0.0.1:8000/files/'
+        endpoint: `${url}/files/`,
+        chunkSize: 100_000_000, // 100MB
       })
 
     uppy.on('complete', (result) => {
-      console.log('Upload complete! Files uploaded:', result.successful)
+      console.log(result)
     })
   </script>
 </body>
