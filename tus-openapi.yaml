@@ -1,0 +1,403 @@
+openapi: 3.0.3
+info:
+  title: TUS Resumable Upload Protocol
+  version: 1.0.0
+  description: |
+    The tus protocol provides a mechanism for resumable file uploads via HTTP/1.1 and HTTP/2.
+    This OpenAPI specification describes the core protocol and its extensions.
+  contact:
+    name: TUS Protocol
+    url: https://tus.io
+  license:
+    name: MIT
+    url: https://github.com/tus/tus-resumable-upload-protocol/blob/main/LICENSE.txt
+
+servers:
+  - url: https://tus.example.org
+    description: Example TUS server
+
+paths:
+  /{uploadId}:
+    parameters:
+      - name: uploadId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Unique identifier for the upload resource
+        example: "24e533e02ec3bc40c387f1a0e460e216"
+
+    head:
+      summary: Get upload offset
+      description: Determine the offset at which the upload should be continued
+      operationId: getUploadOffset
+      parameters:
+        - $ref: '#/components/parameters/TusResumable'
+      responses:
+        '200':
+          description: Upload found with current offset
+          headers:
+            Upload-Offset:
+              $ref: '#/components/headers/UploadOffset'
+            Upload-Length:
+              $ref: '#/components/headers/UploadLength'
+            Tus-Resumable:
+              $ref: '#/components/headers/TusResumable'
+            Upload-Metadata:
+              $ref: '#/components/headers/UploadMetadata'
+            Upload-Defer-Length:
+              $ref: '#/components/headers/UploadDeferLength'
+            Upload-Concat:
+              $ref: '#/components/headers/UploadConcat'
+            Cache-Control:
+              schema:
+                type: string
+                enum: ['no-store']
+        '204':
+          description: Upload found with current offset (no content)
+          headers:
+            Upload-Offset:
+              $ref: '#/components/headers/UploadOffset'
+            Upload-Length:
+              $ref: '#/components/headers/UploadLength'
+            Tus-Resumable:
+              $ref: '#/components/headers/TusResumable'
+            Cache-Control:
+              schema:
+                type: string
+                enum: ['no-store']
+        '403':
+          description: Forbidden
+        '404':
+          description: Upload not found
+        '410':
+          description: Upload no longer exists
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+
+    patch:
+      summary: Resume upload
+      description: Resume the upload by sending the remaining bytes
+      operationId: resumeUpload
+      parameters:
+        - $ref: '#/components/parameters/TusResumable'
+        - $ref: '#/components/parameters/UploadOffset'
+        - $ref: '#/components/parameters/ContentLength'
+        - $ref: '#/components/parameters/UploadLength'
+        - $ref: '#/components/parameters/UploadChecksum'
+        - $ref: '#/components/parameters/XHttpMethodOverride'
+      requestBody:
+        required: true
+        content:
+          application/offset+octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        '204':
+          description: Upload chunk successfully received
+          headers:
+            Upload-Offset:
+              $ref: '#/components/headers/UploadOffset'
+            Tus-Resumable:
+              $ref: '#/components/headers/TusResumable'
+            Upload-Expires:
+              $ref: '#/components/headers/UploadExpires'
+        '400':
+          description: Bad request (e.g., unsupported checksum algorithm)
+        '403':
+          description: Forbidden (e.g., PATCH on final upload)
+        '404':
+          description: Upload not found
+        '409':
+          description: Offset conflict
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '415':
+          description: Unsupported media type
+        '460':
+          description: Checksum mismatch
+
+    delete:
+      summary: Terminate upload
+      description: Terminate an upload and free associated resources
+      operationId: terminateUpload
+      parameters:
+        - $ref: '#/components/parameters/TusResumable'
+        - $ref: '#/components/parameters/XHttpMethodOverride'
+      responses:
+        '204':
+          description: Upload successfully terminated
+          headers:
+            Tus-Resumable:
+              $ref: '#/components/headers/TusResumable'
+        '404':
+          description: Upload not found
+        '410':
+          description: Upload no longer exists
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+
+    options:
+      summary: Get upload capabilities
+      description: Get information about server configuration for a specific upload
+      operationId: getUploadOptions
+      responses:
+        '200':
+          $ref: '#/components/responses/OptionsResponse'
+        '204':
+          $ref: '#/components/responses/OptionsResponse'
+
+    get:
+      summary: Download upload
+      description: Download the uploaded file (extension)
+      operationId: downloadUpload
+      responses:
+        '200':
+          description: File content
+          content:
+            '*/*':
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Upload not found
+
+  /:
+    post:
+      summary: Create upload
+      description: Create a new upload resource
+      operationId: createUpload
+      parameters:
+        - $ref: '#/components/parameters/TusResumable'
+        - $ref: '#/components/parameters/UploadLength'
+        - $ref: '#/components/parameters/UploadDeferLength'
+        - $ref: '#/components/parameters/UploadMetadata'
+        - $ref: '#/components/parameters/UploadConcat'
+        - $ref: '#/components/parameters/ContentType'
+        - $ref: '#/components/parameters/XHttpMethodOverride'
+      requestBody:
+        content:
+          application/offset+octet-stream:
+            schema:
+              type: string
+              format: binary
+            description: Optional initial chunk of upload data (Creation With Upload extension)
+      responses:
+        '201':
+          description: Upload created successfully
+          headers:
+            Location:
+              schema:
+                type: string
+                format: uri
+              description: URL of the created upload resource
+            Tus-Resumable:
+              $ref: '#/components/headers/TusResumable'
+            Upload-Offset:
+              $ref: '#/components/headers/UploadOffset'
+            Upload-Expires:
+              $ref: '#/components/headers/UploadExpires'
+        '400':
+          description: Bad request
+        '412':
+          $ref: '#/components/responses/PreconditionFailed'
+        '413':
+          description: Request entity too large
+
+    options:
+      summary: Get server capabilities
+      description: Get information about server configuration
+      operationId: getServerOptions
+      responses:
+        '200':
+          $ref: '#/components/responses/OptionsResponse'
+        '204':
+          $ref: '#/components/responses/OptionsResponse'
+
+components:
+  parameters:
+    TusResumable:
+      name: Tus-Resumable
+      in: header
+      required: true
+      schema:
+        type: string
+        enum: ['1.0.0']
+      description: Version of the protocol used by the client
+
+    UploadOffset:
+      name: Upload-Offset
+      in: header
+      required: true
+      schema:
+        type: integer
+        minimum: 0
+      description: Byte offset within the upload
+
+    UploadLength:
+      name: Upload-Length
+      in: header
+      required: false
+      schema:
+        type: integer
+        minimum: 0
+      description: Size of the entire upload in bytes
+
+    UploadDeferLength:
+      name: Upload-Defer-Length
+      in: header
+      required: false
+      schema:
+        type: integer
+        enum: [1]
+      description: Indicates that upload size is not known and will be transferred later
+
+    UploadMetadata:
+      name: Upload-Metadata
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Comma-separated key-value pairs with base64 encoded values
+
+    UploadConcat:
+      name: Upload-Concat
+      in: header
+      required: false
+      schema:
+        type: string
+        pattern: '^(partial|final(;.+)?)$'
+      description: Indicates partial or final upload for concatenation
+
+    ContentLength:
+      name: Content-Length
+      in: header
+      required: true
+      schema:
+        type: integer
+        minimum: 0
+      description: Length of the request body
+
+    ContentType:
+      name: Content-Type
+      in: header
+      required: false
+      schema:
+        type: string
+        enum: ['application/offset+octet-stream']
+      description: Content type for upload data
+
+    UploadChecksum:
+      name: Upload-Checksum
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Checksum algorithm and base64 encoded checksum value
+
+    XHttpMethodOverride:
+      name: X-HTTP-Method-Override
+      in: header
+      required: false
+      schema:
+        type: string
+        enum: ['HEAD', 'PATCH', 'DELETE']
+      description: Override the HTTP method if environment doesn't support it
+
+  headers:
+    TusResumable:
+      schema:
+        type: string
+        enum: ['1.0.0']
+      description: Protocol version
+
+    TusVersion:
+      schema:
+        type: string
+      description: Comma-separated list of supported protocol versions
+
+    TusExtension:
+      schema:
+        type: string
+      description: Comma-separated list of supported extensions
+
+    TusMaxSize:
+      schema:
+        type: integer
+        minimum: 0
+      description: Maximum allowed size of an upload in bytes
+
+    TusChecksumAlgorithm:
+      schema:
+        type: string
+      description: Comma-separated list of supported checksum algorithms
+
+    UploadOffset:
+      schema:
+        type: integer
+        minimum: 0
+      description: Current byte offset of the upload
+
+    UploadLength:
+      schema:
+        type: integer
+        minimum: 0
+      description: Total size of the upload in bytes
+
+    UploadDeferLength:
+      schema:
+        type: integer
+        enum: [1]
+      description: Indicates deferred length
+
+    UploadMetadata:
+      schema:
+        type: string
+      description: Upload metadata as key-value pairs
+
+    UploadExpires:
+      schema:
+        type: string
+        format: date-time
+      description: RFC 7231 datetime when upload expires
+
+    UploadConcat:
+      schema:
+        type: string
+      description: Concatenation information
+
+  responses:
+    PreconditionFailed:
+      description: Protocol version not supported
+      headers:
+        Tus-Version:
+          $ref: '#/components/headers/TusVersion'
+
+    OptionsResponse:
+      description: Server capabilities
+      headers:
+        Tus-Resumable:
+          $ref: '#/components/headers/TusResumable'
+        Tus-Version:
+          $ref: '#/components/headers/TusVersion'
+        Tus-Extension:
+          $ref: '#/components/headers/TusExtension'
+        Tus-Max-Size:
+          $ref: '#/components/headers/TusMaxSize'
+        Tus-Checksum-Algorithm:
+          $ref: '#/components/headers/TusChecksumAlgorithm'
+
+tags:
+  - name: Core Protocol
+    description: Core TUS protocol operations
+  - name: Creation
+    description: Upload creation extension
+  - name: Termination
+    description: Upload termination extension
+  - name: Concatenation
+    description: Upload concatenation extension
+  - name: Checksum
+    description: Checksum verification extension
+  - name: Expiration
+    description: Upload expiration extension

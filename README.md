@@ -164,30 +164,32 @@ scheduler.start()
 
 ## Example
 
-You can find a complete working basic example in the [examples](https://github/edihasaj/tuspyserver/tree/main/examples) folder.
+You can find a complete working basic example in the [example](https://github/edihasaj/tuspyserver/tree/main/examples) folder.
 
-The example consists of the following:
+the example consists of a `backend` serving fastapi with uvicorn, and a `frontend` npm project.
 
+### Running the example
+
+To run the example, you need to install [`uv`](https://docs.astral.sh/uv/) and run the following in the `example/backend` folder:
 ```bash
-basic.py           # backend: a tus router added to a fastapi app and runs it with uvicorn
-static/index.html  # frontend: a simple static HTML file using uppy (based on tus-js-client)
+uv run server.py
 ```
 
-To run it, you need to install [`uv`](https://docs.astral.sh/uv/) and run:
+Then, in another terminal window, run the following in `example/frontend`:
 ```bash
-uv run basic.py
+npm run dev
 ```
 
-This should launch the server, and you should now be able to test uploads by browsing to http://localhost:8000/static/index.html.
+This should launch the server, and you should now be able to test uploads by browsing to http://localhost:5173.
 
-Uploaded files get placed in the `examples/uploads` folder.
+Uploaded files get placed in the `example/backend/uploads` folder.
 
 ## Developing
 
 Contributions welcome! Please open issues or PRs on [GitHub](https://github.com/edihasaj/tuspyserver).
 
 You need [`uv`](https://docs.astral.sh/uv/) to develop the project. The project is setup as a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
-where the root is the [library](https://docs.astral.sh/uv/concepts/projects/init/#libraries) and the examples directory is an [unpackagedapplication](https://docs.astral.sh/uv/concepts/projects/init/#applications)
+where the root is the [library](https://docs.astral.sh/uv/concepts/projects/init/#libraries) and the example directory is an [unpackaged app](https://docs.astral.sh/uv/concepts/projects/init/#applications)
 
 ### Releasing
 
