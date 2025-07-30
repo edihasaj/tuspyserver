@@ -12,11 +12,11 @@ class TusRouterOptions(BaseModel):
     prefix: str
     files_dir: str
     max_size: int
-    auth: Callable[[], None] | None
+    auth: Optional[Callable[[], None]]
     days_to_keep: int
-    on_upload_complete: Callable[[str, dict], None] | None
-    upload_complete_dep: Callable[..., Callable[[str, dict], None]] | None
-    tags: list[str] | None
+    on_upload_complete: Optional[Callable[[str, dict], None]]
+    upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]]
+    tags: Optional[list[str]]
     tus_version: str
     tus_extension: str
 
