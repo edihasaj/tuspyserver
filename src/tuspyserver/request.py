@@ -1,16 +1,12 @@
 from __future__ import annotations
+
 import typing
+from typing import Optional
 
 if typing.TYPE_CHECKING:
     from tuspyserver.router import TusRouterOptions
 
-
-from fastapi import (
-    HTTPException,
-    Path,
-    Request,
-)
-
+from fastapi import HTTPException, Path, Request
 from starlette.requests import ClientDisconnect
 
 from tuspyserver.file import TusUploadFile
@@ -21,7 +17,7 @@ def make_request_chunks_dep(options: TusRouterOptions):
         request: Request,
         uuid: str = Path(...),
         post_request: bool = False,
-    ) -> bool | None:
+    ) -> Optional[bool]:
         # init file handle
         file = TusUploadFile(uid=uuid, options=options)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from typing import List, Optional
 
 if typing.TYPE_CHECKING:
     from tuspyserver.router import TusRouterOptions
@@ -21,8 +22,8 @@ class TusUploadFile:
     def __init__(
         self,
         options: TusRouterOptions,
-        uid: str | None = None,
-        params: TusUploadParams | None = None,
+        uid: Optional[str] = None,
+        params: Optional[TusUploadParams] = None,
     ):
         self._options = options
         # init
@@ -48,7 +49,7 @@ class TusUploadFile:
         return self._options
 
     @property
-    def info(self) -> TusUploadParams | None:
+    def info(self) -> Optional[TusUploadParams]:
         return self._info.params
 
     @info.setter
@@ -62,7 +63,7 @@ class TusUploadFile:
     def create(self) -> None:
         open(self.path, "a").close()
 
-    def read(self) -> bytes | None:
+    def read(self) -> Optional[bytes]:
         if self.exists:
             with open(self.path, "rb") as f:
                 return f.read()
@@ -83,7 +84,7 @@ class TusUploadFile:
         return 0
 
 
-def list_files(options: TusRouterOptions) -> list[str]:
+def list_files(options: TusRouterOptions) -> List[str]:
     return [f for f in os.listdir(options.files_dir) if len(f) == 32]
 
 

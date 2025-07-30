@@ -1,11 +1,11 @@
-from typing import Hashable, Optional, Union
+from typing import Dict, Hashable, Optional, Union
 
 from pydantic import BaseModel
 
 
 class TusUploadParams(BaseModel):
-    metadata: dict[Hashable, str]
-    size: int | None
+    metadata: Dict[Hashable, str]
+    size: Optional[int]
     offset: int = 0
     upload_part: int = 0
     created_at: str

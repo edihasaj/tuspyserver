@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import typing
+from typing import Optional
 
 if typing.TYPE_CHECKING:
     from tuspyserver.file import TusUploadFile
@@ -12,10 +13,10 @@ from tuspyserver.params import TusUploadParams
 
 
 class TusUploadInfo:
-    _params: TusUploadParams | None
+    _params: Optional[TusUploadParams]
     file: TusUploadFile
 
-    def __init__(self, file: TusUploadFile, params: TusUploadParams | None = None):
+    def __init__(self, file: TusUploadFile, params: Optional[TusUploadParams] = None):
         self.file = file
         self._params = params
         # create if doesn't exist
@@ -47,7 +48,7 @@ class TusUploadInfo:
             )
             f.write(json_string)
 
-    def deserialize(self) -> TusUploadParams | None:
+    def deserialize(self) -> Optional[TusUploadParams]:
         if self.exists:
             try:
                 with open(self.path, "r") as f:

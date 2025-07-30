@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, List, Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -16,7 +16,7 @@ class TusRouterOptions(BaseModel):
     days_to_keep: int
     on_upload_complete: Optional[Callable[[str, dict], None]]
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]]
-    tags: Optional[list[str]]
+    tags: Optional[List[str]]
     tus_version: str
     tus_extension: str
 
@@ -33,7 +33,7 @@ def create_tus_router(
     days_to_keep: int = 5,
     on_upload_complete: Optional[Callable[[str, dict], None]] = None,
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]] = None,
-    tags: Optional[list[str]] = None,
+    tags: Optional[List[str]] = None,
 ):
     async def _fallback_on_complete_dep() -> Callable[[str, dict], None]:
         return on_upload_complete or (lambda *_: None)
