@@ -34,11 +34,32 @@ def creation_extension_routes(router, options):
         # create upload metadata
         metadata = {}
         if upload_metadata is not None and upload_metadata != "":
-            # Decode the base64-encoded string
+            # Decode the base64-encoded metadata
+            # Format: "key1 base64value1,key2 base64value2" (gracefully handle missing values)
             for kv in upload_metadata.split(","):
-                key, value = kv.rsplit(" ", 1)
-                decoded_value = base64.b64decode(value.strip()).decode("utf-8")
-                metadata[key.strip()] = decoded_value
+                kv = kv.strip()  # Remove any surrounding whitespace
+                if not kv:  # Skip empty entries
+                    continue
+                    
+                split = kv.rsplit(" ", 1)
+                if len(split) == 2:
+                    key, value = split
+                    key = key.strip()
+                    if not key:  # Skip entries with empty keys
+                        continue
+                    try:
+                        decoded_value = base64.b64decode(value.strip()).decode("utf-8")
+                        metadata[key] = decoded_value
+                    except Exception:
+                        # Skip invalid base64 values gracefully
+                        continue
+                elif len(split) == 1:
+                    key = split[0].strip()
+                    if key:  # Only add non-empty keys
+                        metadata[key] = ""
+                else:
+                    # This case should never happen with rsplit(" ", 1), but keeping for safety
+                    raise HTTPException(status_code=400, detail="Unexpected format in metadata")
         # create upload params
         params = TusUploadParams(
             metadata=metadata,
