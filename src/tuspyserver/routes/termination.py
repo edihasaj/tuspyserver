@@ -1,9 +1,4 @@
-from fastapi import (
-    Depends,
-    HTTPException,
-    Response,
-    status,
-)
+from fastapi import Depends, HTTPException, Response, status
 
 from tuspyserver.file import TusUploadFile
 
@@ -24,7 +19,7 @@ def termination_extension_routes(router, options):
             raise HTTPException(status_code=404, detail="Upload not found")
 
         # Delete the file and metadata for the upload from the mapping
-        file.delete()
+        file.delete(uuid)
 
         # Return a 204 No Content response
         response.headers["Tus-Resumable"] = options.tus_version

@@ -1,20 +1,22 @@
 from __future__ import annotations
+
 import typing
+from typing import Optional
 
 if typing.TYPE_CHECKING:
     from tuspyserver.file import TusUploadFile
 
-from tuspyserver.params import TusUploadParams
-
-import os
 import json
+import os
+
+from tuspyserver.params import TusUploadParams
 
 
 class TusUploadInfo:
-    _params: TusUploadParams | None
+    _params: Optional[TusUploadParams]
     file: TusUploadFile
 
-    def __init__(self, file: TusUploadFile, params: TusUploadParams | None = None):
+    def __init__(self, file: TusUploadFile, params: Optional[TusUploadParams] = None):
         self.file = file
         self._params = params
         # create if doesn't exist
@@ -46,10 +48,22 @@ class TusUploadInfo:
             )
             f.write(json_string)
 
-    def deserialize(self) -> TusUploadParams | None:
+    def deserialize(self) -> Optional[TusUploadParams]:
         if self.exists:
-            with open(self.path, "r") as f:
-                json_dict = json.load(f) or {}
-                self._params = TusUploadParams(**json_dict)
+            try:
+                with open(self.path, "r") as f:
+                    content = f.read().strip()
+                    if not content:  # Handle empty files
+                        return None
+                    json_dict = json.loads(content)
+                    if json_dict:  # Only create params if we have valid data
+                        self._params = TusUploadParams(**json_dict)
+                    else:
+                        self._params = None
+            except (json.JSONDecodeError, FileNotFoundError, KeyError, TypeError):
+                # Handle corrupted JSON or missing required fields
+                self._params = None
+        else:
+            self._params = None
 
-        return None
+        return self._params

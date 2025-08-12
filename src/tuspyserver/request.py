@@ -1,16 +1,12 @@
 from __future__ import annotations
+
 import typing
+from typing import Optional
 
 if typing.TYPE_CHECKING:
     from tuspyserver.router import TusRouterOptions
 
-
-from fastapi import (
-    HTTPException,
-    Path,
-    Request,
-)
-
+from fastapi import HTTPException, Path, Request
 from starlette.requests import ClientDisconnect
 
 from tuspyserver.file import TusUploadFile
@@ -21,13 +17,20 @@ def make_request_chunks_dep(options: TusRouterOptions):
         request: Request,
         uuid: str = Path(...),
         post_request: bool = False,
-    ) -> bool | None:
+    ) -> Optional[bool]:
         # init file handle
         file = TusUploadFile(uid=uuid, options=options)
 
         # check if valid file
         if not file.exists or not file.info:
             raise HTTPException(status_code=404, detail="Upload not found")
+
+        # Validate Upload-Offset header matches current file offset
+        upload_offset = request.headers.get("upload-offset")
+        if upload_offset is not None:
+            upload_offset = int(upload_offset)
+            if file.info.offset != upload_offset:
+                raise HTTPException(status_code=409, detail="Conflict")
 
         # init variables
         has_chunks = False

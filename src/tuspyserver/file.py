@@ -1,16 +1,17 @@
 from __future__ import annotations
+
 import typing
+from typing import List, Optional
 
 if typing.TYPE_CHECKING:
     from tuspyserver.router import TusRouterOptions
 
-import os
 import datetime
-
+import os
 from uuid import uuid4
 
-from tuspyserver.params import TusUploadParams
 from tuspyserver.info import TusUploadInfo
+from tuspyserver.params import TusUploadParams
 
 
 class TusUploadFile:
@@ -21,8 +22,8 @@ class TusUploadFile:
     def __init__(
         self,
         options: TusRouterOptions,
-        uid: str | None = None,
-        params: TusUploadParams | None = None,
+        uid: Optional[str] = None,
+        params: Optional[TusUploadParams] = None,
     ):
         self._options = options
         # init
@@ -48,7 +49,7 @@ class TusUploadFile:
         return self._options
 
     @property
-    def info(self) -> TusUploadParams:
+    def info(self) -> Optional[TusUploadParams]:
         return self._info.params
 
     @info.setter
@@ -62,7 +63,7 @@ class TusUploadFile:
     def create(self) -> None:
         open(self.path, "a").close()
 
-    def read(self) -> bytes | None:
+    def read(self) -> Optional[bytes]:
         if self.exists:
             with open(self.path, "rb") as f:
                 return f.read()
@@ -72,8 +73,10 @@ class TusUploadFile:
         if os.path.exists(self.path):
             os.remove(self.path)
 
-        if os.path.exists(self.info.path):
-            os.remove(self.info.path)
+        # Only try to delete info file if info exists
+        if self.info is not None and hasattr(self._info, "path"):
+            if os.path.exists(self._info.path):
+                os.remove(self._info.path)
 
     def __len__(self) -> int:
         if self.exists:
@@ -81,16 +84,17 @@ class TusUploadFile:
         return 0
 
 
-def list_files(options: TusRouterOptions) -> list[str]:
+def list_files(options: TusRouterOptions) -> List[str]:
     return [f for f in os.listdir(options.files_dir) if len(f) == 32]
 
 
 def gc_files(options: TusRouterOptions):
-    for uid in list_files():
+    for uid in list_files(options):
         file = TusUploadFile(uid=uid, options=options)
         if (
-            file.info
+            file.info is not None
             and file.info.expires
+            and isinstance(file.info.expires, str)
             and datetime.datetime.fromisoformat(file.info.expires)
             < datetime.datetime.now()
         ):
