@@ -51,9 +51,15 @@ def core_routes(router, options):
         response.headers["Upload-Metadata"] = (
             f"filename {b64(filename)}, filetype {b64(filetype)}"
         )
-        response.headers["Upload-Length"] = str(file.info.size)
+        
+        # Handle deferred length in HEAD response
+        if file.info.defer_length:
+            response.headers["Upload-Defer-Length"] = "1"
+        else:
+            response.headers["Upload-Length"] = str(file.info.size)
+            response.headers["Content-Length"] = str(file.info.size)
+            
         response.headers["Upload-Offset"] = str(file.info.offset)
-        response.headers["Content-Length"] = str(file.info.size)
         response.headers["Cache-Control"] = "no-store"
 
         response.status_code = status.HTTP_200_OK
@@ -66,6 +72,7 @@ def core_routes(router, options):
         uuid: str,
         content_length: int = Header(None),
         upload_offset: int = Header(None),
+        upload_length: int = Header(None),
         _=Depends(request_chunks_dep),
         __=Depends(options.auth),
         on_complete: Callable[[str, dict], None] = Depends(options.upload_complete_dep),
@@ -76,15 +83,14 @@ def core_routes(router, options):
         if not file.exists or file.info is None or uuid != file.uid:
             raise HTTPException(status_code=404)
 
-        # check if the Upload Offset with Content-Length header is correct
-        if file.info.offset != upload_offset + content_length:
-            raise HTTPException(status_code=409)
-
         # init copy of params to update
         new_params = file.info
 
-        if file.info.defer_length:
-            new_params.size = upload_offset
+        # Handle deferred length according to TUS protocol
+        if file.info.defer_length and upload_length is not None:
+            # Client is setting the final upload length
+            new_params.size = upload_length
+            new_params.defer_length = False
 
         if not file.info.expires:
             date_expiry = datetime.now() + timedelta(days=options.days_to_keep)
