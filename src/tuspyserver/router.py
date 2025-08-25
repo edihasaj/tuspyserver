@@ -16,6 +16,8 @@ class TusRouterOptions(BaseModel):
     days_to_keep: int
     on_upload_complete: Optional[Callable[[str, dict], None]]
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]]
+    pre_create_hook: Optional[Callable[[dict, dict], None]]
+    pre_create_dep: Optional[Callable[..., Callable[[dict, dict], None]]]
     tags: Optional[List[str]]
     tus_version: str
     tus_extension: str
@@ -33,12 +35,18 @@ def create_tus_router(
     days_to_keep: int = 5,
     on_upload_complete: Optional[Callable[[str, dict], None]] = None,
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]] = None,
+    pre_create_hook: Optional[Callable[[dict, dict], None]] = None,
+    pre_create_dep: Optional[Callable[..., Callable[[dict, dict], None]]] = None,
     tags: Optional[List[str]] = None,
 ):
     async def _fallback_on_complete_dep() -> Callable[[str, dict], None]:
         return on_upload_complete or (lambda *_: None)
 
+    async def _fallback_pre_create_dep() -> Callable[[dict, dict], None]:
+        return pre_create_hook or (lambda *_: None)
+
     upload_complete_dep = upload_complete_dep or _fallback_on_complete_dep
+    pre_create_dep = pre_create_dep or _fallback_pre_create_dep
 
     options = TusRouterOptions(
         prefix=prefix[1:] if prefix and prefix[0] == "/" else prefix,
@@ -49,6 +57,9 @@ def create_tus_router(
         on_upload_complete=on_upload_complete,
         upload_complete_dep=upload_complete_dep
         or (lambda _: on_upload_complete or (lambda *_: None)),
+        pre_create_hook=pre_create_hook,
+        pre_create_dep=pre_create_dep
+        or (lambda _: pre_create_hook or (lambda *_: None)),
         tags=tags,
         tus_version="1.0.0",
         tus_extension=",".join(

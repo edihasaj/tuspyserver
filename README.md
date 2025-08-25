@@ -53,6 +53,43 @@ tus_router = create_tus_router(
     days_to_keep=5,                                   # retention period
     on_upload_complete=None,               # upload callback
     upload_complete_dep=None,             # upload callback (dependency injector)
+    pre_create_hook=None,                 # pre-creation callback
+    pre_create_dep=None,                  # pre-creation callback (dependency injector)
+)
+```
+
+### Pre-Create Hook
+
+The Pre-Create Hook allows you to validate metadata and perform authentication **before** a file is created on the server. This is useful for:
+
+- **Metadata validation**: Check if required fields are present, validate file types, etc.
+- **User authentication**: Verify user permissions before allowing upload creation
+- **Business logic**: Apply custom rules before file creation
+
+The hook receives two parameters:
+- `metadata`: A dictionary containing the decoded upload metadata
+- `upload_info`: A dictionary with upload parameters (size, defer_length, expires)
+
+```python
+def validate_upload(metadata: dict, upload_info: dict):
+    # Validate required metadata
+    if "filename" not in metadata:
+        raise HTTPException(status_code=400, detail="Filename is required")
+    
+    # Check file size limits
+    if upload_info["size"] and upload_info["size"] > 100_000_000:  # 100MB
+        raise HTTPException(status_code=413, detail="File too large")
+    
+    # Validate file type
+    if "filetype" in metadata:
+        allowed_types = ["image/jpeg", "image/png", "application/pdf"]
+        if metadata["filetype"] not in allowed_types:
+            raise HTTPException(status_code=400, detail="File type not allowed")
+
+# Use the hook
+tus_router = create_tus_router(
+    files_dir="./uploads",
+    pre_create_hook=validate_upload,
 )
 ```
 
@@ -136,6 +173,42 @@ def log_user_upload(
 app.include_router(
     create_api_router(
         upload_complete_dep=log_user_upload,
+    )
+)
+```
+
+#### Pre-Create Hook with Dependency Injection
+
+You can also use dependency injection with the Pre-Create Hook for authentication and validation:
+
+```python
+from fastapi import Depends, HTTPException
+from your_app.dependencies import get_db, get_current_user
+
+def validate_user_upload(
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> Callable[[dict, dict], None]:
+    # callback function
+    async def handler(metadata: dict, upload_info: dict):
+        # Check user permissions
+        if not current_user.can_upload:
+            raise HTTPException(status_code=403, detail="Upload not allowed")
+        
+        # Validate against user's quota
+        user_uploads = await db.get_user_uploads(current_user.id)
+        if len(user_uploads) >= current_user.upload_limit:
+            raise HTTPException(status_code=429, detail="Upload quota exceeded")
+        
+        # Log the upload attempt
+        await db.log_upload_attempt(current_user.id, metadata, upload_info)
+    
+    return handler
+
+# Include router with the pre-create DI hook
+app.include_router(
+    create_tus_router(
+        pre_create_dep=validate_user_upload,
     )
 )
 ```
