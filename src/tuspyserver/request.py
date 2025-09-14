@@ -97,10 +97,26 @@ def make_request_chunks_dep(options: TusRouterOptions):
 def get_request_headers(request: Request, uuid: str, prefix: str = "files") -> dict:
     proto = "http"
     host = request.headers.get("host")
+    
+    # Check for forwarded headers first (for proxy setups)
     if request.headers.get("X-Forwarded-Proto") is not None:
         proto = request.headers.get("X-Forwarded-Proto")
-    if request.headers.get("X-Forwarded-Host") is not None:
+    elif request.headers.get("X-Forwarded-Host") is not None:
         host = request.headers.get("X-Forwarded-Host")
+    else:
+        # If no forwarded headers, try to detect scheme from request URL
+        # This handles direct HTTPS connections (e.g., Uvicorn with SSL)
+        try:
+            # Use request.url.scheme to detect the actual protocol
+            if hasattr(request, 'url') and request.url.scheme:
+                proto = request.url.scheme
+        except Exception:
+            # Fallback to default if URL parsing fails
+            pass
+    
+    # Ensure we have a host
+    if not host:
+        host = "localhost:8000"  # fallback host
 
     # Use the provided prefix parameter
     clean_prefix = prefix.lstrip("/").rstrip("/")
