@@ -85,8 +85,9 @@ def creation_extension_routes(router, options):
         result = pre_create(metadata, upload_info)
         # if the callback returned a coroutine, await it
         if inspect.isawaitable(result):
-            await result
-
+            result = await result
+        if isinstance(result, dict):
+            options.files_dir = result.get("files_dir", options.files_dir)
         # create the file
         file = TusUploadFile(options=options, params=params)
         # update request headers
