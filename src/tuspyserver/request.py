@@ -97,7 +97,7 @@ def make_request_chunks_dep(options: TusRouterOptions):
 def get_request_headers(request: Request, uuid: str, prefix: str = "files") -> dict:
     proto = "http"
     host = request.headers.get("host")
-    
+
     # Check for forwarded headers first (for proxy setups)
     if request.headers.get("X-Forwarded-Proto") is not None:
         proto = request.headers.get("X-Forwarded-Proto")
@@ -113,16 +113,53 @@ def get_request_headers(request: Request, uuid: str, prefix: str = "files") -> d
         except Exception:
             # Fallback to default if URL parsing fails
             pass
-    
+
     # Ensure we have a host
     if not host:
         host = "localhost:8000"  # fallback host
 
-    # Use the provided prefix parameter
+    # Build the full path including root_path and router prefixes
+    # FastAPI includes the full mount path in request.url.path
+    # We need to construct the base path from the current request path
+    current_path = request.url.path.rstrip("/")
+
+    # The current path should end with our prefix (e.g., "/api/files")
+    # We want to extract everything before our prefix to build the location header
     clean_prefix = prefix.lstrip("/").rstrip("/")
 
+    # Find where our prefix appears in the current path
+    if current_path == f"/{clean_prefix}":
+        # Handle case where current_path is exactly our prefix (e.g., "/files")
+        # This means there's no parent path in the URL, check for root_path
+        root_path = request.scope.get("root_path", "")
+        base_path = root_path.rstrip("/") if root_path else ""
+    elif current_path.endswith(f"/{clean_prefix}"):
+        # Extract the base path (everything before our prefix)
+        base_path = current_path[:-len(f"/{clean_prefix}")]
+    elif current_path.endswith(clean_prefix) and current_path != clean_prefix:
+        # Handle case where current_path doesn't have leading slash
+        base_path = current_path[:-len(clean_prefix)].rstrip("/")
+    else:
+        # Fallback: check for root_path in request scope
+        # This handles FastAPI root_path that might not be included in request.url.path
+        root_path = request.scope.get("root_path", "")
+        if root_path:
+            base_path = root_path.rstrip("/")
+        else:
+            base_path = ""
+
+    # Construct the full path
+    if base_path:
+        full_path = f"{base_path.rstrip('/')}/{clean_prefix}"
+    else:
+        full_path = clean_prefix
+
+    # Ensure path starts with /
+    if not full_path.startswith("/"):
+        full_path = "/" + full_path
+
     return {
-        "location": f"{proto}://{host}/{clean_prefix}/{uuid}",
+        "location": f"{proto}://{host}{full_path}/{uuid}",
         "proto": proto,
         "host": host,
     }
