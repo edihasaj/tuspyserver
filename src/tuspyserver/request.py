@@ -101,11 +101,12 @@ def get_request_headers(request: Request, uuid: str, prefix: str = "files") -> d
     # Check for forwarded headers first (for proxy setups)
     if request.headers.get("X-Forwarded-Proto") is not None:
         proto = request.headers.get("X-Forwarded-Proto")
-    elif request.headers.get("X-Forwarded-Host") is not None:
+    if request.headers.get("X-Forwarded-Host") is not None:
         host = request.headers.get("X-Forwarded-Host")
-    else:
-        # If no forwarded headers, try to detect scheme from request URL
-        # This handles direct HTTPS connections (e.g., Uvicorn with SSL)
+
+    # If no forwarded protocol, try to detect scheme from request URL
+    # This handles direct HTTPS connections (e.g., Uvicorn with SSL)
+    if proto == "http" and not request.headers.get("X-Forwarded-Proto"):
         try:
             # Use request.url.scheme to detect the actual protocol
             if hasattr(request, 'url') and request.url.scheme:
