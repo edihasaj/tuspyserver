@@ -18,6 +18,7 @@ class TusRouterOptions(BaseModel):
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]]
     pre_create_hook: Optional[Callable[[dict, dict], None]]
     pre_create_dep: Optional[Callable[..., Callable[[dict, dict], None]]]
+    file_dep: Optional[Callable[..., Callable[[dict], None]]]
     tags: Optional[List[str]]
     tus_version: str
     tus_extension: str
@@ -37,6 +38,7 @@ def create_tus_router(
     upload_complete_dep: Optional[Callable[..., Callable[[str, dict], None]]] = None,
     pre_create_hook: Optional[Callable[[dict, dict], None]] = None,
     pre_create_dep: Optional[Callable[..., Callable[[dict, dict], None]]] = None,
+    file_dep: Optional[Callable[..., Callable[[dict], None]]] = None,
     tags: Optional[List[str]] = None,
 ):
     async def _fallback_on_complete_dep() -> Callable[[str, dict], None]:
@@ -45,8 +47,12 @@ def create_tus_router(
     async def _fallback_pre_create_dep() -> Callable[[dict, dict], None]:
         return pre_create_hook or (lambda *_: None)
 
+    async def _fallback_file_dep() -> Callable[[dict], None]:
+        return file_dep or (lambda *_: None)
+
     upload_complete_dep = upload_complete_dep or _fallback_on_complete_dep
     pre_create_dep = pre_create_dep or _fallback_pre_create_dep
+    file_dep = file_dep or _fallback_file_dep
 
     options = TusRouterOptions(
         prefix=prefix[1:] if prefix and prefix[0] == "/" else prefix,
@@ -60,6 +66,7 @@ def create_tus_router(
         pre_create_hook=pre_create_hook,
         pre_create_dep=pre_create_dep
         or (lambda _: pre_create_hook or (lambda *_: None)),
+        file_dep=file_dep or (lambda _: file_dep or (lambda *_: None)),
         tags=tags,
         tus_version="1.0.0",
         tus_extension=",".join(

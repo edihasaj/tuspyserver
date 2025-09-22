@@ -1,4 +1,5 @@
 import base64
+from copy import deepcopy
 import inspect
 import os
 from datetime import datetime, timedelta
@@ -26,6 +27,7 @@ def creation_extension_routes(router, options):
         _=Depends(options.auth),
         on_complete: Callable[[str, dict], None] = Depends(options.upload_complete_dep),
         pre_create: Callable[[dict, dict], None] = Depends(options.pre_create_dep),
+        file_dep: Callable[[dict], None] = Depends(options.file_dep),
     ) -> Response:
         # validate upload defer length
         if upload_defer_length is not None and upload_defer_length != 1:
@@ -85,11 +87,18 @@ def creation_extension_routes(router, options):
         result = pre_create(metadata, upload_info)
         # if the callback returned a coroutine, await it
         if inspect.isawaitable(result):
-            result = await result
-        if isinstance(result, dict):
-            options.files_dir = result.get("files_dir", options.files_dir)
+            await result
+        uid = None
+        file_result = file_dep(metadata)
+        file_options = deepcopy(options)
+        # if the callback returned a coroutine, await it
+        if inspect.isawaitable(file_result):
+            file_result = await file_result
+        if isinstance(file_result, dict):
+            file_options.files_dir = file_result.get("files_dir", options.files_dir)
+            uid = file_result.get("uid", None)
         # create the file
-        file = TusUploadFile(options=options, params=params)
+        file = TusUploadFile(options=file_options, uid=uid, params=params)
         # update request headers
         response.headers["Location"] = get_request_headers(
             request=request, uuid=file.uid, prefix=options.prefix
@@ -100,7 +109,7 @@ def creation_extension_routes(router, options):
         response.status_code = status.HTTP_201_CREATED
         # run completion hooks
         if file.info is not None and file.info.size == 0:
-            file_path = os.path.join(options.files_dir, file.uid)
+            file_path = os.path.join(file_options.files_dir, file.uid)
             result = on_complete(file_path, file.info.metadata)
             # if the callback returned a coroutine, await it
             if inspect.isawaitable(result):
