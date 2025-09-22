@@ -1,4 +1,7 @@
+from copy import deepcopy
+from typing import Callable
 from fastapi import Depends, HTTPException, Response, status
+import inspect 
 
 from tuspyserver.file import TusUploadFile
 
@@ -9,10 +12,20 @@ def termination_extension_routes(router, options):
     """
 
     @router.delete("/{uuid}", status_code=status.HTTP_204_NO_CONTENT)
-    def extension_termination_route(
-        uuid: str, response: Response, _=Depends(options.auth)
+    async def extension_termination_route(
+        uuid: str, response: Response, _=Depends(options.auth),
+        file_dep: Callable[[dict], None] = Depends(options.file_dep),
     ) -> Response:
-        file = TusUploadFile(uid=uuid, options=options)
+        # Create a copy of options to avoid mutating the original
+        file_options = deepcopy(options)
+        result = file_dep({})
+
+        # if the callback returned a coroutine, await it
+        if inspect.isawaitable(result):
+            result = await result
+        if isinstance(result, dict):
+            file_options.files_dir = result.get("files_dir", options.files_dir)
+        file = TusUploadFile(uid=uuid, options=file_options)
 
         # Check if the upload ID is valid
         if not file.exists:

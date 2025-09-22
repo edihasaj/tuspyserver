@@ -34,6 +34,8 @@ class TusUploadFile:
         else:
             # reading existing file
             self.uid = uid
+            if not self.exists:
+                self.create()
         # create the files dir if necessary
         if not os.path.exists(self._options.files_dir):
             os.makedirs(self._options.files_dir)

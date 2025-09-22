@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import typing
-from typing import Optional
+from typing import Callable, Optional
+
+import inspect
 
 if typing.TYPE_CHECKING:
     from tuspyserver.router import TusRouterOptions
 
-from fastapi import HTTPException, Path, Request
+from fastapi import Depends, HTTPException, Path, Request
 from starlette.requests import ClientDisconnect
 
 from tuspyserver.file import TusUploadFile
@@ -17,10 +20,20 @@ def make_request_chunks_dep(options: TusRouterOptions):
         request: Request,
         uuid: str = Path(...),
         post_request: bool = False,
+        file_dep: Callable[[dict], None] = Depends(options.file_dep),
     ) -> Optional[bool]:
-        # init file handle
-        file = TusUploadFile(uid=uuid, options=options)
+        # Create a copy of options to avoid mutating the original
+        file_options = deepcopy(options)
+        # call file_dep to possibly update the files_dir
+        result = file_dep({})
+        # if the callback returned a coroutine, await it
+        if inspect.isawaitable(result):
+            result = await result
+        if isinstance(result, dict):
+            file_options.files_dir = result.get("files_dir", file_options.files_dir)
 
+        # init file handle
+        file = TusUploadFile(uid=uuid, options=file_options)
         # check if valid file
         if not file.exists or not file.info:
             raise HTTPException(status_code=404, detail="Upload not found")
@@ -37,7 +50,7 @@ def make_request_chunks_dep(options: TusRouterOptions):
         new_params = file.info
 
         # process chunk stream
-        with open(f"{options.files_dir}/{uuid}", "ab") as f:
+        with open(f"{file_options.files_dir}/{uuid}", "ab") as f:
             try:
                 async for chunk in request.stream():
                     has_chunks = True

@@ -1,4 +1,6 @@
+import asyncio
 import base64
+from copy import deepcopy
 import inspect
 import os
 from datetime import datetime, timedelta
@@ -18,11 +20,22 @@ def core_routes(router, options):
     request_chunks_dep = make_request_chunks_dep(options)
 
     @router.head("/{uuid}", status_code=status.HTTP_200_OK)
-    def core_head_route(
-        response: Response, uuid: str, _=Depends(options.auth)
+    async def core_head_route(
+        response: Response, uuid: str, _=Depends(options.auth),
+        file_dep: Callable[[dict], None] = Depends(options.file_dep),
     ) -> Response:
+        # Create a copy of options to avoid mutating the global options
+        file_options = deepcopy(options)
+
+        # init file handle
+        result = file_dep({})
+        # if the callback returned a coroutine, await it
+        if inspect.isawaitable(result):
+            result = await result
+        if isinstance(result, dict):
+            file_options.files_dir = result.get("files_dir", options.files_dir)
         # validate file
-        file = TusUploadFile(uid=uuid, options=options)
+        file = TusUploadFile(uid=uuid, options=file_options)
 
         # Check if file exists and has valid info
         if not file.exists or file.info is None:
@@ -76,9 +89,20 @@ def core_routes(router, options):
         _=Depends(request_chunks_dep),
         __=Depends(options.auth),
         on_complete: Callable[[str, dict], None] = Depends(options.upload_complete_dep),
+        file_dep: Callable[[dict], None] = Depends(options.file_dep),
     ) -> Response:
-        file = TusUploadFile(uid=uuid, options=options)
+        # Create a copy of options to avoid mutating the original
+        file_options = deepcopy(options)
 
+        result = file_dep({})
+        # if the callback returned a coroutine, await it
+        if inspect.isawaitable(result):
+            result = await result
+        if isinstance(result, dict):
+            file_options.files_dir = result.get("files_dir", options.files_dir)
+        
+        # init file handle
+        file = TusUploadFile(uid=uuid, options=file_options)
         # check if the upload ID is valid and file exists with valid info
         if not file.exists or file.info is None or uuid != file.uid:
             raise HTTPException(status_code=404)
@@ -108,7 +132,7 @@ def core_routes(router, options):
             response.status_code = status.HTTP_204_NO_CONTENT
             if options.on_upload_complete:
                 options.on_upload_complete(
-                    os.path.join(options.files_dir, f"{uuid}"),
+                    os.path.join(file_options.files_dir, f"{uuid}"),
                     file.info.metadata,
                 )
         else:
@@ -118,7 +142,7 @@ def core_routes(router, options):
             response.status_code = status.HTTP_204_NO_CONTENT
 
         if file.info and file.info.size == file.info.offset:
-            file_path = os.path.join(options.files_dir, uuid)
+            file_path = os.path.join(file_options.files_dir, uuid)
             if options.on_upload_complete is None:
                 result = on_complete(file_path, file.info.metadata)
                 # if the callback returned a coroutine, await it
