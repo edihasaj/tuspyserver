@@ -1,3 +1,4 @@
+import inspect
 from typing import Callable, List, Optional
 
 from fastapi import APIRouter
@@ -66,7 +67,7 @@ def create_tus_router(
         pre_create_hook=pre_create_hook,
         pre_create_dep=pre_create_dep
         or (lambda _: pre_create_hook or (lambda *_: None)),
-        file_dep=file_dep or (lambda _: file_dep or (lambda *_: None)),
+        file_dep=file_dep or (lambda _: file_dep or (lambda metadata: None)),
         tags=tags,
         tus_version="1.0.0",
         tus_extension=",".join(
