@@ -49,7 +49,7 @@ def create_tus_router(
         return pre_create_hook or (lambda *_: None)
 
     async def _fallback_file_dep() -> Callable[[dict], None]:
-        return file_dep or (lambda metadata: None)
+        return lambda metadata: None
 
     upload_complete_dep = upload_complete_dep or _fallback_on_complete_dep
     pre_create_dep = pre_create_dep or _fallback_pre_create_dep
@@ -67,7 +67,7 @@ def create_tus_router(
         pre_create_hook=pre_create_hook,
         pre_create_dep=pre_create_dep
         or (lambda _: pre_create_hook or (lambda *_: None)),
-        file_dep=file_dep or (lambda _: file_dep or (lambda metadata: None)),
+        file_dep=file_dep,
         tags=tags,
         tus_version="1.0.0",
         tus_extension=",".join(
