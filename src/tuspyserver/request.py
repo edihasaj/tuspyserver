@@ -38,9 +38,9 @@ def make_request_chunks_dep(options: TusRouterOptions):
         if not file.exists or not file.info:
             raise HTTPException(status_code=404, detail="Upload not found")
 
-        # Validate Upload-Offset header matches current file offset
+        # Validate Upload-Offset header matches current file offset (if strict validation is enabled)
         upload_offset = request.headers.get("upload-offset")
-        if upload_offset is not None:
+        if options.strict_offset_validation and upload_offset is not None:
             upload_offset = int(upload_offset)
             if file.info.offset != upload_offset:
                 raise HTTPException(status_code=409, detail="Conflict")

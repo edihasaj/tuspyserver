@@ -23,6 +23,7 @@ class TusRouterOptions(BaseModel):
     tags: Optional[List[str]]
     tus_version: str
     tus_extension: str
+    strict_offset_validation: bool
 
 
 async def noop():
@@ -41,6 +42,7 @@ def create_tus_router(
     pre_create_dep: Optional[Callable[..., Callable[[dict, dict], None]]] = None,
     file_dep: Optional[Callable[..., Callable[[dict], None]]] = None,
     tags: Optional[List[str]] = None,
+    strict_offset_validation: bool = False,
 ):
     async def _fallback_on_complete_dep() -> Callable[[str, dict], None]:
         return on_upload_complete or (lambda *_: None)
@@ -79,6 +81,7 @@ def create_tus_router(
                 "termination",
             ]
         ),
+        strict_offset_validation=strict_offset_validation,
     )
 
     clean_prefix = prefix.lstrip("/").rstrip("/")
