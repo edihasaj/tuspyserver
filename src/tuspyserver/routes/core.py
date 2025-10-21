@@ -37,6 +37,11 @@ def core_routes(router, options):
         # validate file
         file = TusUploadFile(uid=uuid, options=file_options)
 
+        # DEBUG: Log file info for troubleshooting
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"HEAD {uuid}: exists={file.exists}, info={file.info}, file_size={len(file) if file.exists else 0}")
+
         # Check if file exists and has valid info
         if not file.exists or file.info is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)

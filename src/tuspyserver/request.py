@@ -74,6 +74,7 @@ def make_request_chunks_dep(options: TusRouterOptions):
                         )
                     # write chunk otherwise
                     f.write(chunk)
+                    f.flush()  # Ensure data is written to disk immediately
                     # update upload params
                     new_params.offset += len(chunk)
                     new_params.upload_chunk_size = len(chunk)
