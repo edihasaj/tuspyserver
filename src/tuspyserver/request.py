@@ -81,6 +81,8 @@ def make_request_chunks_dep(options: TusRouterOptions):
                     # save updated params
                     file.info = new_params
             except ClientDisconnect:
+                # Save the current offset before returning, so resume works correctly
+                file.info = new_params
                 return False
             except Exception as e:
                 # save the error
