@@ -1,4 +1,4 @@
-from typing import Dict, Hashable, Optional, Union
+from typing import Dict, Hashable, List, Optional, Union
 
 from pydantic import BaseModel
 
@@ -13,3 +13,6 @@ class TusUploadParams(BaseModel):
     upload_chunk_size: int = 0
     expires: Optional[Union[float, str]]
     error: Optional[str] = None
+    is_partial: bool = False
+    is_final: bool = False
+    partial_uploads: Optional[List[str]] = None
