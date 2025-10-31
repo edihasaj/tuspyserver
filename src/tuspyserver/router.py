@@ -79,6 +79,7 @@ def create_tus_router(
                 "creation-with-upload",
                 "expiration",
                 "termination",
+                "concatenation",
             ]
         ),
         strict_offset_validation=strict_offset_validation,

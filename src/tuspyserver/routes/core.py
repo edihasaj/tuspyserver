@@ -80,6 +80,12 @@ def core_routes(router, options):
         response.headers["Upload-Offset"] = str(file.info.offset)
         response.headers["Cache-Control"] = "no-store"
 
+        # Add Upload-Concat header for concatenation extension
+        if file.info.is_partial:
+            response.headers["Upload-Concat"] = "partial"
+        elif file.info.is_final:
+            response.headers["Upload-Concat"] = "final"
+
         response.status_code = status.HTTP_200_OK
 
         return response
