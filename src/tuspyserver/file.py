@@ -26,6 +26,31 @@ class TusUploadFile:
         params: Optional[TusUploadParams] = None,
     ):
         self._options = options
+        
+        # Ensure files_dir is a valid directory path
+        # Normalize the path and ensure parent directories exist
+        files_dir = os.path.abspath(os.path.expanduser(self._options.files_dir))
+        
+        # Check if path exists and is actually a directory
+        if os.path.exists(files_dir):
+            if not os.path.isdir(files_dir):
+                raise OSError(
+                    f"Upload directory path '{files_dir}' exists but is not a directory. "
+                    f"Please ensure the path points to a valid directory."
+                )
+        else:
+            # create the files dir if necessary (must be done before creating files)
+            try:
+                os.makedirs(files_dir, exist_ok=True)
+            except OSError as e:
+                raise OSError(
+                    f"Failed to create upload directory '{files_dir}': {e}. "
+                    f"Please ensure the path is valid and writable."
+                ) from e
+        
+        # Update options with normalized path
+        self._options.files_dir = files_dir
+        
         # init
         if uid is None:
             # creating new file
@@ -34,7 +59,9 @@ class TusUploadFile:
         else:
             # reading existing file
             self.uid = uid
-            if not self.exists:
+            # Only create the file if we're explicitly creating a new upload with params
+            # This happens when creating a partial or final upload with a specific uid
+            if params is not None and not self.exists:
                 self.create()
         # create the files dir if necessary
         if not os.path.exists(self._options.files_dir):

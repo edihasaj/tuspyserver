@@ -3,6 +3,7 @@ from copy import deepcopy
 import inspect
 import os
 from datetime import datetime, timedelta
+from email.utils import formatdate
 from typing import Callable
 from urllib.parse import urlparse
 
@@ -10,6 +11,11 @@ from fastapi import Depends, Header, HTTPException, Request, Response, status
 
 from tuspyserver.file import TusUploadFile, TusUploadParams
 from tuspyserver.request import get_request_headers
+
+
+def _format_rfc7231_date(dt: datetime) -> str:
+    """Format datetime to RFC 7231 date-time format."""
+    return formatdate(dt.timestamp(), usegmt=True)
 
 
 def creation_extension_routes(router, options):
@@ -26,11 +32,20 @@ def creation_extension_routes(router, options):
         upload_length: int = Header(None),
         upload_defer_length: int = Header(None),
         upload_concat: str = Header(None),
+        tus_resumable: str = Header(None),
         _=Depends(options.auth),
         on_complete: Callable[[str, dict], None] = Depends(options.upload_complete_dep),
         pre_create: Callable[[dict, dict], None] = Depends(options.pre_create_dep),
         file_dep: Callable[[dict], None] = Depends(options.file_dep),
     ) -> Response:
+        # Validate Tus-Resumable header version
+        if tus_resumable is None or tus_resumable != options.tus_version:
+            raise HTTPException(
+                status_code=status.HTTP_412_PRECONDITION_FAILED,
+                detail=f"Unsupported version. Expected {options.tus_version}",
+                headers={"Tus-Version": options.tus_version}
+            )
+        
         # validate upload defer length
         if upload_defer_length is not None and upload_defer_length != 1:
             raise HTTPException(status_code=400, detail="Invalid Upload-Defer-Length")
@@ -101,13 +116,23 @@ def creation_extension_routes(router, options):
                         detail="Upload-Concat final header must specify at least one partial upload"
                     )
 
-                # Extract UUIDs from URLs or use bare UUIDs
+                # Extract UUIDs from URLs (full or relative) or use bare UUIDs
                 partial_uids = []
                 for url_or_uid in partial_url_list:
                     if url_or_uid.startswith("http://") or url_or_uid.startswith("https://"):
-                        # Parse URL to extract UUID
+                        # Parse full URL to extract UUID
                         parsed = urlparse(url_or_uid)
                         path_parts = [p for p in parsed.path.split("/") if p]
+                        if not path_parts:
+                            raise HTTPException(
+                                status_code=400,
+                                detail=f"Invalid URL in Upload-Concat header: {url_or_uid}"
+                            )
+                        uid = path_parts[-1]
+                    elif "/" in url_or_uid:
+                        # Handle relative URLs like "/files/uuid" or "files/uuid"
+                        # Extract the last path component as the UUID
+                        path_parts = [p for p in url_or_uid.split("/") if p]
                         if not path_parts:
                             raise HTTPException(
                                 status_code=400,
@@ -200,7 +225,7 @@ def creation_extension_routes(router, options):
             upload_part=0,
             created_at=str(datetime.now()),
             defer_length=upload_defer_length is not None,
-            expires=str(date_expiry.isoformat()),
+            expires=_format_rfc7231_date(date_expiry),
             is_partial=is_partial,
             is_final=is_final,
             partial_uploads=partial_uploads,
@@ -228,6 +253,35 @@ def creation_extension_routes(router, options):
             uid = file_result.get("uid", None)
         # create the file
         file = TusUploadFile(options=file_options, uid=uid, params=params)
+        
+        # Handle Creation-With-Upload extension: check if POST has body with initial data
+        # Note: FastAPI may have already consumed the request body, so we check Content-Length
+        # and attempt to read initial data if available
+        initial_data_size = 0
+        content_length_header = request.headers.get("content-length")
+        if content_length_header:
+            try:
+                content_length_value = int(content_length_header)
+                if content_length_value > 0:
+                    # Try to read initial upload data if present
+                    # Note: This handles the Creation-With-Upload extension
+                    try:
+                        body = await request.body()
+                        if body and len(body) > 0:
+                            initial_data_size = len(body)
+                            # Write initial data to file
+                            with open(file.path, "ab") as f:
+                                f.write(body)
+                                f.flush()
+                            # Update offset
+                            params.offset += len(body)
+                            params.upload_part += 1
+                            file.info = params
+                    except Exception:
+                        # If body was already consumed or other error, skip
+                        pass
+            except (ValueError, TypeError):
+                pass  # Invalid content-length, ignore
 
         # If this is a final concatenated upload, perform the concatenation
         if is_final and partial_files:
@@ -302,6 +356,13 @@ def creation_extension_routes(router, options):
         )["location"]
         response.headers["Tus-Resumable"] = options.tus_version
         response.headers["Content-Length"] = str(0)
+        # Include Upload-Offset header if Creation-With-Upload extension was used
+        if initial_data_size > 0 and file.info:
+            response.headers["Upload-Offset"] = str(file.info.offset)
+        # Include Upload-Expires header
+        if file.info and file.info.expires:
+            expires_str = file.info.expires if isinstance(file.info.expires, str) else _format_rfc7231_date(datetime.fromtimestamp(file.info.expires))
+            response.headers["Upload-Expires"] = expires_str
         # set status code
         response.status_code = status.HTTP_201_CREATED
         # run completion hooks for zero-byte uploads OR final concatenated uploads
