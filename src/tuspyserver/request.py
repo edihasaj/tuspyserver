@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import datetime
+import os
 import typing
 from typing import Callable, Optional
 
@@ -13,6 +15,7 @@ from fastapi import Depends, HTTPException, Path, Request
 from starlette.requests import ClientDisconnect
 
 from tuspyserver.file import TusUploadFile
+from tuspyserver.lock import acquire_upload_lock
 
 
 def make_request_chunks_dep(options: TusRouterOptions):
@@ -34,76 +37,150 @@ def make_request_chunks_dep(options: TusRouterOptions):
 
         # init file handle
         file = TusUploadFile(uid=uuid, options=file_options)
-        # check if valid file
+        # check if valid file exists BEFORE acquiring lock
         if not file.exists or not file.info:
             raise HTTPException(status_code=404, detail="Upload not found")
+        
+        # Ensure uploads directory exists before locking
+        uploads_dir = file_options.files_dir
+        os.makedirs(uploads_dir, exist_ok=True)
+        
+        # Create locks directory path (matches tusd's .locks directory)
+        locks_dir = os.path.join(uploads_dir, ".locks")
+        
+        # Acquire lock BEFORE any validation or reading to prevent race conditions
+        # This ensures we have exclusive access during the entire write operation
+        upload_path = file.path
+        try:
+            with acquire_upload_lock(upload_path, locks_dir=locks_dir, blocking=True):
+                # Re-read info file while holding lock to get latest offset
+                # This prevents TOCTOU race condition
+                file._info._loaded = False  # Force reload
+                current_info = file.info
+                
+                if current_info is None:
+                    raise HTTPException(status_code=404, detail="Upload not found")
+                
+                # Check if upload has expired (distinguish from non-existent uploads)
+                if current_info.expires:
+                    expires_dt = None
+                    if isinstance(current_info.expires, str):
+                        try:
+                            # Try RFC 7231 format first (e.g., "Mon, 02 Jan 2006 15:04:05 GMT")
+                            from email.utils import parsedate_to_datetime
+                            expires_dt = parsedate_to_datetime(current_info.expires)
+                        except (ValueError, TypeError):
+                            # Fallback to ISO format
+                            try:
+                                expires_dt = datetime.datetime.fromisoformat(current_info.expires.replace('Z', '+00:00'))
+                            except (ValueError, AttributeError):
+                                pass
+                    elif isinstance(current_info.expires, (int, float)):
+                        expires_dt = datetime.datetime.fromtimestamp(current_info.expires)
+                    
+                    if expires_dt:
+                        now = datetime.datetime.now(expires_dt.tzinfo) if expires_dt.tzinfo else datetime.datetime.now()
+                        if expires_dt < now:
+                            raise HTTPException(status_code=410, detail="Upload expired")
 
-        # Validate Upload-Offset header matches current file offset (if strict validation is enabled)
-        upload_offset = request.headers.get("upload-offset")
-        if options.strict_offset_validation and upload_offset is not None:
-            upload_offset = int(upload_offset)
-            if file.info.offset != upload_offset:
-                raise HTTPException(status_code=409, detail="Conflict")
+                # Validate Upload-Offset header matches current file offset (required for PATCH)
+                # Use the offset we just read while holding the lock
+                upload_offset = request.headers.get("upload-offset")
+                if upload_offset is not None:
+                    try:
+                        upload_offset = int(upload_offset)
+                        if current_info.offset != upload_offset:
+                            raise HTTPException(status_code=409, detail="Offset mismatch")
+                    except (ValueError, TypeError):
+                        raise HTTPException(status_code=400, detail="Invalid Upload-Offset header")
+                else:
+                    # Upload-Offset is required for PATCH
+                    raise HTTPException(status_code=400, detail="Upload-Offset header is required")
 
-        # init variables
-        has_chunks = False
-        new_params = file.info
+                # Use the validated offset directly - don't re-read from file.info
+                # This prevents stale offset issues
+                new_params = current_info
+                validated_offset = current_info.offset
 
-        # process chunk stream
-        with open(f"{file_options.files_dir}/{uuid}", "ab") as f:
-            try:
-                async for chunk in request.stream():
-                    has_chunks = True
-                    # skip empty chunks but continue processing
-                    if len(chunk) == 0:
-                        continue
-                    # Check if upload would exceed declared size
-                    if (
-                        new_params.size is not None
-                        and new_params.offset + len(chunk) > new_params.size
-                    ):
-                        raise HTTPException(
-                            status_code=400,
-                            detail="Upload would exceed declared Upload-Length",
-                        )
-                    # throw if max size exceeded
-                    if new_params.offset + len(chunk) > options.max_size:
-                        raise HTTPException(
-                            status_code=413,
-                            detail="Upload exceeds maximum allowed size",
-                        )
-                    # write chunk otherwise
-                    f.write(chunk)
-                    f.flush()  # Ensure data is written to disk immediately
-                    # update upload params
-                    new_params.offset += len(chunk)
-                    new_params.upload_chunk_size = len(chunk)
+                # init variables
+                has_chunks = False
+                total_bytes_written = 0
+
+                # process chunk stream - lock is held during entire operation
+                with open(upload_path, "ab") as f:
+                    try:
+                        async for chunk in request.stream():
+                            has_chunks = True
+                            # skip empty chunks but continue processing
+                            if len(chunk) == 0:
+                                continue
+                            
+                            # Calculate new offset based on validated offset + bytes written so far
+                            new_offset = validated_offset + total_bytes_written
+                            
+                            # Check if upload would exceed declared size
+                            if (
+                                new_params.size is not None
+                                and new_offset + len(chunk) > new_params.size
+                            ):
+                                raise HTTPException(
+                                    status_code=400,
+                                    detail="Upload would exceed declared Upload-Length",
+                                )
+                            # throw if max size exceeded
+                            if new_offset + len(chunk) > options.max_size:
+                                raise HTTPException(
+                                    status_code=413,
+                                    detail="Upload exceeds maximum allowed size",
+                                )
+                            # write chunk otherwise
+                            f.write(chunk)
+                            f.flush()  # Ensure data is written to disk immediately
+                            total_bytes_written += len(chunk)
+                        
+                        # After all chunks are written, update params atomically
+                        # Lock is still held here, so this is safe
+                        new_params.offset = validated_offset + total_bytes_written
+                        new_params.upload_chunk_size = total_bytes_written if total_bytes_written > 0 else 0
+                        new_params.upload_part += 1
+                        # Save updated params (atomic write while lock is held)
+                        file.info = new_params
+                        
+                    except HTTPException:
+                        # HTTPExceptions should propagate - don't catch them here
+                        # The lock will be released by the context manager
+                        raise
+                    except ClientDisconnect:
+                        # Save the current offset before returning, so resume works correctly
+                        # Lock is still held, so this is safe
+                        new_params.offset = validated_offset + total_bytes_written
+                        new_params.upload_chunk_size = total_bytes_written if total_bytes_written > 0 else 0
+                        new_params.upload_part += 1
+                        file.info = new_params
+                        return False
+                    except Exception as e:
+                        # save the error
+                        new_params.error = str(e)
+                        new_params.offset = validated_offset + total_bytes_written
+                        # save updated params
+                        file.info = new_params
+                        return False
+                    finally:
+                        f.close()
+
+                # For empty files in a POST request, we still want to return True
+                # to ensure the file gets created properly
+                # Lock is still held here
+                if post_request and not has_chunks:
+                    # update params for empty file
+                    new_params.offset = validated_offset
+                    new_params.upload_chunk_size = 0
                     new_params.upload_part += 1
                     # save updated params
                     file.info = new_params
-            except ClientDisconnect:
-                # Save the current offset before returning, so resume works correctly
-                file.info = new_params
-                return False
-            except Exception as e:
-                # save the error
-                new_params.error = str(e)
-                # save updated params
-                file.info = new_params
-
-                return False
-            finally:
-                f.close()
-
-        # For empty files in a POST request, we still want to return True
-        # to ensure the file gets created properly
-        if post_request and not has_chunks:
-            # update params for empty file
-            new_params.offset = 0
-            new_params.upload_chunk_size = 0
-            new_params.upload_part += 1
-            # save updated params
-            file.info = new_params
+        except (IOError, OSError) as e:
+            # Lock acquisition or file operation failed
+            raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
         return True
 
