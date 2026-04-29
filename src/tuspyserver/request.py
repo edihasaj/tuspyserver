@@ -15,7 +15,7 @@ from fastapi import Depends, HTTPException, Path, Request
 from starlette.requests import ClientDisconnect
 
 from tuspyserver.file import TusUploadFile
-from tuspyserver.lock import acquire_upload_lock
+from tuspyserver.lock import LockTimeoutError, acquire_upload_lock
 
 
 def make_request_chunks_dep(options: TusRouterOptions):
@@ -178,6 +178,10 @@ def make_request_chunks_dep(options: TusRouterOptions):
                     new_params.upload_part += 1
                     # save updated params
                     file.info = new_params
+        except LockTimeoutError as e:
+            # Shared lock dir is contended or wedged. Fail fast so the worker
+            # is freed instead of piling up behind a stuck filesystem.
+            raise HTTPException(status_code=503, detail=str(e))
         except (IOError, OSError) as e:
             # Lock acquisition or file operation failed
             raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
