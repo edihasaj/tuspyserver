@@ -55,6 +55,7 @@ tus_router = create_tus_router(
     upload_complete_dep=None,             # upload callback (dependency injector)
     pre_create_hook=None,                 # pre-creation callback
     pre_create_dep=None,                  # pre-creation callback (dependency injector)
+    file_dep=None,                        # file path callback (dependency injector)
 )
 ```
 
@@ -209,6 +210,40 @@ def validate_user_upload(
 app.include_router(
     create_tus_router(
         pre_create_dep=validate_user_upload,
+    )
+)
+```
+
+#### File Routing Dependency Injection
+
+You can use dependency injection with file dep for directly storing the file:
+
+```python
+from fastapi import Depends, HTTPException
+from your_app.dependencies import get_db, get_current_user, get_user_dir
+
+def get_file(
+    db=Depends(get_db),
+    current_user=Depends(get_current_user),
+) -> Callable[[dict, dict], None]:
+    # callback function
+    async def handler(metadata: dict):
+        # Get the file name
+        file_name = metadata["file_name"]
+        # Get the file directory
+        file_dir = get_user_dir(current_user)
+
+        return {
+            "file_dir": file_dir,
+            "uid": file_name
+        }
+
+    return handler
+
+# Include router with the pre-create DI hook
+app.include_router(
+    create_tus_router(
+        file_dep=file_dep,
     )
 )
 ```

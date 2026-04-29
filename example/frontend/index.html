@@ -14,7 +14,7 @@
   <div id="drag-drop-area"></div>
 
   <script type="module">
-    const url = import.meta.env.VITE_BACKEND_URL ?? 'http://localhost:8000'
+    const url = 'http://localhost:8000'
     console.log(`Resolved API url: ${url}`)
     import {
       Uppy, Dashboard, Tus
@@ -26,7 +26,7 @@
       })
       .use(Tus, {
         endpoint: `${url}/files/`,
-        chunkSize: 100_000_000, // 100MB
+        chunkSize: 100_000_000_000,
       })
 
     uppy.on('complete', (result) => {

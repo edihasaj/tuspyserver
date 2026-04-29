@@ -36,13 +36,13 @@ def pre_create_hook(metadata: dict, upload_info: dict):
     if "filename" not in metadata:
         raise HTTPException(status_code=400, detail="Filename is required")
 
-    # Example: Check file size limits (100MB)
-    if upload_info["size"] and upload_info["size"] > 100_000_000:
-        raise HTTPException(status_code=413, detail="File too large (max 100MB)")
+    # Example: Check file size limits (1GB)
+    if upload_info["size"] and upload_info["size"] > 1_000_000_000:
+        raise HTTPException(status_code=413, detail="File too large (max 1GB)")
 
     # Example: Validate file type if provided
     if "filetype" in metadata:
-        allowed_types = ["image/jpeg", "image/png", "application/pdf", "text/plain"]
+        allowed_types = ["image/jpeg", "image/png", "application/pdf", "text/plain", "video/mp4", "audio/mp3", "audio/mpeg"]
         if metadata["filetype"] not in allowed_types:
             raise HTTPException(
                 status_code=400, detail=f"File type {metadata['filetype']} not allowed"
@@ -62,6 +62,7 @@ def on_upload_complete(file_path: str, metadata: dict):
 app.include_router(
     create_tus_router(
         files_dir="./uploads",
+        max_size=1_000_000_000,  # 1GB (10x increase from 100MB)
         pre_create_hook=pre_create_hook,
         on_upload_complete=on_upload_complete,
         prefix="files",
