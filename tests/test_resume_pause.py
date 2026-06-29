@@ -164,6 +164,70 @@ class TestTusResumePause:
         # Verify upload completed
         assert int(headers["upload-offset"]) == len(file_content)
 
+    def test_post_override_patch_uploads_chunk(self, client: TestClient):
+        """Test POST with X-HTTP-Method-Override is dispatched as PATCH."""
+        file_content = b"override patch content"
+        upload_id, _ = self.create_upload(
+            client, "override.txt", len(file_content), "text/plain"
+        )
+
+        response = client.post(
+            f"/files/{upload_id}",
+            content=file_content,
+            headers={
+                "X-HTTP-Method-Override": "PATCH",
+                "Upload-Offset": "0",
+                "Content-Type": "application/offset+octet-stream",
+                "Content-Length": str(len(file_content)),
+                "Tus-Resumable": "1.0.0",
+            },
+        )
+
+        assert response.status_code == 204, response.text
+        assert int(response.headers["Upload-Offset"]) == len(file_content)
+
+    def test_post_override_delete_terminates_upload(self, client: TestClient):
+        """Test POST with X-HTTP-Method-Override is dispatched as DELETE."""
+        upload_id, _ = self.create_upload(client, "delete.txt", 10, "text/plain")
+
+        response = client.post(
+            f"/files/{upload_id}",
+            headers={
+                "X-HTTP-Method-Override": "DELETE",
+                "Tus-Resumable": "1.0.0",
+            },
+        )
+
+        assert response.status_code == 204, response.text
+
+        response = client.head(
+            f"/files/{upload_id}",
+            headers={"Tus-Resumable": "1.0.0"},
+        )
+        assert response.status_code == 404
+
+    def test_override_ignores_actual_method(self, client: TestClient):
+        """Test override header takes precedence over the actual method."""
+        upload_id, _ = self.create_upload(client, "head.txt", 10, "text/plain")
+
+        response = client.request(
+            "DELETE",
+            f"/files/{upload_id}",
+            headers={
+                "X-HTTP-Method-Override": "HEAD",
+                "Tus-Resumable": "1.0.0",
+            },
+        )
+
+        assert response.status_code == 200, response.text
+        assert int(response.headers["Upload-Offset"]) == 0
+
+        response = client.head(
+            f"/files/{upload_id}",
+            headers={"Tus-Resumable": "1.0.0"},
+        )
+        assert response.status_code == 200
+
     def test_resume_after_pause(self, client: TestClient):
         """Test resuming upload after pause (simulated)."""
         # Create a 1MB file
