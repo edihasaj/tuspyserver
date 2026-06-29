@@ -8,6 +8,10 @@ on:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write
 
     steps:
     - name: Checkout code
@@ -20,7 +24,4 @@ jobs:
       run: uv build --package tuspyserver
 
     - name: Publish to PyPI
-      env:
-        UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
       run: uv publish
-

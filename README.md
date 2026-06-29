@@ -303,12 +303,21 @@ where the root is the [library](https://docs.astral.sh/uv/concepts/projects/init
 
 ### Releasing
 
+PyPI publishing uses [Trusted Publishing](https://docs.pypi.org/trusted-publishers/).
+Before the first release, add a GitHub Actions trusted publisher for the PyPI
+project with:
+
+- Owner: `edihasaj`
+- Repository name: `tuspyserver`
+- Workflow name: `publish.yml`
+- Environment name: `pypi`
+
 To release the package, follow the following steps:
 
 1. Update the version in `pyproject.toml` using [semver](https://semver.org/)
 2. Merge PR to main or push directly to main
 3. Open a PR to merge `main` → `production`.
-4. Upon merge, CI/CD will publish to PyPI.
+4. Upon merge, CI/CD will publish to PyPI without a PyPI API token secret.
 
 
 *© 2025 Edi Hasaj [X](https://x.com/hasajedi)*
