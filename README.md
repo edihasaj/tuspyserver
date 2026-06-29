@@ -295,6 +295,8 @@ Uploaded files get placed in the `example/backend/uploads` folder.
 ## Developing
 
 Contributions welcome! Please open issues or PRs on [GitHub](https://github.com/edihasaj/tuspyserver).
+The proposed contribution of tuspyserver to the tus organization is tracked in
+[tus/tus.io#525](https://github.com/tus/tus.io/issues/525).
 
 You need [`uv`](https://docs.astral.sh/uv/) to develop the project. The project is setup as a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
 where the root is the [library](https://docs.astral.sh/uv/concepts/projects/init/#libraries) and the example directory is an [unpackaged app](https://docs.astral.sh/uv/concepts/projects/init/#applications)
