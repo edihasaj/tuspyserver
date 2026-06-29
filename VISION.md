@@ -47,4 +47,5 @@ cheap to maintain — not grow into a file-management product.
 
 - Additional storage backends behind a stable interface.
 - Broader tus extension coverage and conformance testing.
-- Consider contributing the project to the tus org.
+- Contribute the project to the tus org if the maintainers agree; discussion is
+  tracked in [tus/tus.io#525](https://github.com/tus/tus.io/issues/525).
