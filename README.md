@@ -319,3 +319,5 @@ acts as a floor and does not need to track every published patch.
 
 
 *© 2025 Edi Hasaj [X](https://x.com/hasajedi)*
+
+<!-- shot demo -->
