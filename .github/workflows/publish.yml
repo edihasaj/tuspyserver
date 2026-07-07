@@ -5,23 +5,78 @@ on:
     branches:
       - production
 
+concurrency:
+  group: publish-pypi
+  cancel-in-progress: false
+
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
-      contents: read
-      id-token: write
+      contents: write
 
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
+      with:
+        ref: production
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Install uv
-      uses: astral-sh/setup-uv@v5
+      uses: astral-sh/setup-uv@v6
+
+    - name: Compute next version
+      id: version
+      run: |
+        NEXT=$(python3 - <<'PY'
+        import json, tomllib, urllib.request
+
+        with open("pyproject.toml", "rb") as f:
+            current = tomllib.load(f)["project"]["version"]
+
+        try:
+            with urllib.request.urlopen(
+                "https://pypi.org/pypi/tuspyserver/json", timeout=15
+            ) as r:
+                latest = json.load(r)["info"]["version"]
+        except Exception:
+            latest = "0.0.0"
+
+        def parse(v):
+            return tuple(int(p) for p in v.split("."))
+
+        # A manual bump in pyproject (ahead of PyPI) wins; otherwise bump patch.
+        if parse(current) > parse(latest):
+            nxt = current
+        else:
+            major, minor, patch = parse(latest)
+            nxt = f"{major}.{minor}.{patch + 1}"
+
+        print(nxt)
+        PY
+        )
+        echo "next=$NEXT" >> "$GITHUB_OUTPUT"
+        echo "Publishing version $NEXT"
+
+    - name: Set version
+      run: uv version --no-sync "${{ steps.version.outputs.next }}"
 
     - name: Build package
       run: uv build --package tuspyserver
 
     - name: Publish to PyPI
+      env:
+        UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
       run: uv publish
+
+    - name: Commit version bump
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add pyproject.toml uv.lock
+        if git diff --cached --quiet; then
+          echo "No version change to commit."
+        else
+          git commit -m "chore: release v${{ steps.version.outputs.next }} [skip ci]"
+          git push origin production
+        fi
