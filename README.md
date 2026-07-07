@@ -272,7 +272,7 @@ scheduler.start()
 
 ## Example
 
-You can find a complete working basic example in the [example](https://github/edihasaj/tuspyserver/tree/main/examples) folder.
+You can find a complete working basic example in the [example](https://github.com/edihasaj/tuspyserver/tree/main/examples) folder.
 
 the example consists of a `backend` serving fastapi with uvicorn, and a `frontend` npm project.
 
@@ -303,21 +303,20 @@ where the root is the [library](https://docs.astral.sh/uv/concepts/projects/init
 
 ### Releasing
 
-PyPI publishing uses [Trusted Publishing](https://docs.pypi.org/trusted-publishers/).
-Before the first release, add a GitHub Actions trusted publisher for the PyPI
-project with:
+Releases are fully automated. Every push to `main` runs
+[`.github/workflows/publish.yml`](.github/workflows/publish.yml), which:
 
-- Owner: `edihasaj`
-- Repository name: `tuspyserver`
-- Workflow name: `publish.yml`
-- Environment name: `pypi`
+1. Computes the next version — bumps the patch of the latest version on PyPI
+   (a manual bump in `pyproject.toml` that is *ahead* of PyPI wins, so you can
+   still cut a minor/major release by editing `pyproject.toml`).
+2. Writes it to `pyproject.toml` + `uv.lock`, builds, and publishes to PyPI
+   using the `PYPI_API_TOKEN` repository secret.
+3. Commits the version bump back to `main` (tagged `[skip ci]` so it does not
+   re-trigger the workflow).
 
-To release the package, follow the following steps:
-
-1. Update the version in `pyproject.toml` using [semver](https://semver.org/)
-2. Merge PR to main or push directly to main
-3. Open a PR to merge `main` → `production`.
-4. Upon merge, CI/CD will publish to PyPI without a PyPI API token secret.
+So to ship a patch release, just merge to `main` — no manual version bump
+needed. For a minor/major release, bump the version in `pyproject.toml` in the
+same change.
 
 
 *© 2025 Edi Hasaj [X](https://x.com/hasajedi)*
