@@ -12,15 +12,10 @@ concurrency:
 jobs:
   build-and-publish:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v5
-      with:
-        ref: main
-        token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Install uv
       uses: astral-sh/setup-uv@v6
@@ -29,30 +24,48 @@ jobs:
       id: version
       run: |
         NEXT=$(python3 - <<'PY'
-        import json, tomllib, urllib.request
+        import json, tomllib, urllib.error, urllib.request
+
+        PKG = "tuspyserver"
 
         with open("pyproject.toml", "rb") as f:
             current = tomllib.load(f)["project"]["version"]
 
+        def parse(v):
+            return tuple(int(p) for p in v.split("."))
+
+        def exists(version):
+            # Per-version endpoint is fresher than the aggregated `info.version`,
+            # so it reliably reflects a just-published release.
+            url = f"https://pypi.org/pypi/{PKG}/{version}/json"
+            try:
+                urllib.request.urlopen(url, timeout=15).read()
+                return True
+            except urllib.error.HTTPError as e:
+                if e.code == 404:
+                    return False
+                raise
+            except Exception:
+                # On a transient error, assume it exists and skip past it —
+                # a version gap is harmless, a duplicate upload is a hard failure.
+                return True
+
+        # Aggregated latest is a best-effort starting floor (may lag).
         try:
             with urllib.request.urlopen(
-                "https://pypi.org/pypi/tuspyserver/json", timeout=15
+                f"https://pypi.org/pypi/{PKG}/json", timeout=15
             ) as r:
                 latest = json.load(r)["info"]["version"]
         except Exception:
             latest = "0.0.0"
 
-        def parse(v):
-            return tuple(int(p) for p in v.split("."))
+        # Floor is the higher of the manual pyproject version and PyPI's latest,
+        # so a manual minor/major bump wins; then walk up to the first free patch.
+        major, minor, patch = max(parse(current), parse(latest))
+        while exists(f"{major}.{minor}.{patch}"):
+            patch += 1
 
-        # A manual bump in pyproject (ahead of PyPI) wins; otherwise bump patch.
-        if parse(current) > parse(latest):
-            nxt = current
-        else:
-            major, minor, patch = parse(latest)
-            nxt = f"{major}.{minor}.{patch + 1}"
-
-        print(nxt)
+        print(f"{major}.{minor}.{patch}")
         PY
         )
         echo "next=$NEXT" >> "$GITHUB_OUTPUT"
@@ -68,15 +81,3 @@ jobs:
       env:
         UV_PUBLISH_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
       run: uv publish
-
-    - name: Commit version bump
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add pyproject.toml uv.lock
-        if git diff --cached --quiet; then
-          echo "No version change to commit."
-        else
-          git commit -m "chore: release v${{ steps.version.outputs.next }} [skip ci]"
-          git push origin main
-        fi

@@ -306,17 +306,16 @@ where the root is the [library](https://docs.astral.sh/uv/concepts/projects/init
 Releases are fully automated. Every push to `main` runs
 [`.github/workflows/publish.yml`](.github/workflows/publish.yml), which:
 
-1. Computes the next version — bumps the patch of the latest version on PyPI
-   (a manual bump in `pyproject.toml` that is *ahead* of PyPI wins, so you can
-   still cut a minor/major release by editing `pyproject.toml`).
-2. Writes it to `pyproject.toml` + `uv.lock`, builds, and publishes to PyPI
-   using the `PYPI_API_TOKEN` repository secret.
-3. Commits the version bump back to `main` (tagged `[skip ci]` so it does not
-   re-trigger the workflow).
+1. Computes the next version — takes the higher of the `pyproject.toml` version
+   and the latest release on PyPI, then walks up to the first unused patch. PyPI
+   is the source of truth for what has already shipped.
+2. Sets that version, builds, and publishes to PyPI using the `PYPI_API_TOKEN`
+   repository secret.
 
 So to ship a patch release, just merge to `main` — no manual version bump
 needed. For a minor/major release, bump the version in `pyproject.toml` in the
-same change.
+same change and CI will publish from there. The version in `pyproject.toml`
+acts as a floor and does not need to track every published patch.
 
 
 *© 2025 Edi Hasaj [X](https://x.com/hasajedi)*
