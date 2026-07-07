@@ -3,7 +3,7 @@ name: Publish to PyPI
 on:
   push:
     branches:
-      - production
+      - main
 
 concurrency:
   group: publish-pypi
@@ -19,7 +19,7 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v5
       with:
-        ref: production
+        ref: main
         token: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Install uv
@@ -78,5 +78,5 @@ jobs:
           echo "No version change to commit."
         else
           git commit -m "chore: release v${{ steps.version.outputs.next }} [skip ci]"
-          git push origin production
+          git push origin main
         fi
