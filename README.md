@@ -295,18 +295,29 @@ Uploaded files get placed in the `example/backend/uploads` folder.
 ## Developing
 
 Contributions welcome! Please open issues or PRs on [GitHub](https://github.com/edihasaj/tuspyserver).
+The proposed contribution of tuspyserver to the tus organization is tracked in
+[tus/tus.io#525](https://github.com/tus/tus.io/issues/525).
 
 You need [`uv`](https://docs.astral.sh/uv/) to develop the project. The project is setup as a [uv workspace](https://docs.astral.sh/uv/concepts/projects/workspaces/)
 where the root is the [library](https://docs.astral.sh/uv/concepts/projects/init/#libraries) and the example directory is an [unpackaged app](https://docs.astral.sh/uv/concepts/projects/init/#applications)
 
 ### Releasing
 
+PyPI publishing uses [Trusted Publishing](https://docs.pypi.org/trusted-publishers/).
+Before the first release, add a GitHub Actions trusted publisher for the PyPI
+project with:
+
+- Owner: `edihasaj`
+- Repository name: `tuspyserver`
+- Workflow name: `publish.yml`
+- Environment name: `pypi`
+
 To release the package, follow the following steps:
 
 1. Update the version in `pyproject.toml` using [semver](https://semver.org/)
 2. Merge PR to main or push directly to main
 3. Open a PR to merge `main` → `production`.
-4. Upon merge, CI/CD will publish to PyPI.
+4. Upon merge, CI/CD will publish to PyPI without a PyPI API token secret.
 
 
 *© 2025 Edi Hasaj [X](https://x.com/hasajedi)*

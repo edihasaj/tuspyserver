@@ -2,7 +2,9 @@ import inspect
 from typing import Callable, List, Optional
 
 from fastapi import APIRouter
+from fastapi.routing import APIRoute
 from pydantic import BaseModel
+from starlette.types import Receive, Scope, Send
 
 from tuspyserver.routes.core import core_routes
 from tuspyserver.routes.creation import creation_extension_routes
@@ -28,6 +30,32 @@ class TusRouterOptions(BaseModel):
 
 async def noop():
     pass
+
+
+class TusAPIRoute(APIRoute):
+    """Route that honors tus X-HTTP-Method-Override before dispatch."""
+
+    _method_override_header = b"x-http-method-override"
+
+    @classmethod
+    def _scope_with_method_override(cls, scope: Scope) -> Scope:
+        if scope["type"] != "http":
+            return scope
+
+        for name, value in scope.get("headers", []):
+            if name.lower() == cls._method_override_header:
+                override = value.decode("latin-1").strip().upper()
+                override_scope = dict(scope)
+                override_scope["method"] = override
+                return override_scope
+
+        return scope
+
+    def matches(self, scope: Scope):
+        return super().matches(self._scope_with_method_override(scope))
+
+    async def handle(self, scope: Scope, receive: Receive, send: Send) -> None:
+        await super().handle(self._scope_with_method_override(scope), receive, send)
 
 
 def create_tus_router(
@@ -89,6 +117,7 @@ def create_tus_router(
     router = APIRouter(
         prefix=f"/{clean_prefix}" if clean_prefix else "",
         redirect_slashes=True,
+        route_class=TusAPIRoute,
         tags=options.tags or ["Tus"],
     )
 

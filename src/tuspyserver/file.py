@@ -10,8 +10,26 @@ import datetime
 import os
 from uuid import uuid4
 
+from fastapi import HTTPException
+
 from tuspyserver.info import TusUploadInfo
 from tuspyserver.params import TusUploadParams
+
+
+def _validate_uid_within_dir(files_dir: str, uid: str) -> None:
+    """Ensure ``uid`` resolves to a path inside ``files_dir``.
+
+    Protects against path traversal (CWE-22) where a crafted ``uid`` such as
+    ``../../../etc/passwd`` (e.g. supplied via the Upload-Concat header) would
+    otherwise escape the configured upload directory.
+    """
+    if not uid:
+        raise HTTPException(status_code=400, detail="Invalid upload ID")
+
+    base = os.path.realpath(files_dir)
+    resolved = os.path.realpath(os.path.join(base, uid))
+    if resolved != base and not resolved.startswith(base + os.sep):
+        raise HTTPException(status_code=400, detail="Invalid upload ID")
 
 
 class TusUploadFile:
@@ -58,6 +76,9 @@ class TusUploadFile:
             self.create()
         else:
             # reading existing file
+            # Validate the caller-supplied uid stays within files_dir to
+            # prevent path traversal (CWE-22).
+            _validate_uid_within_dir(files_dir, uid)
             self.uid = uid
             # Only create the file if we're explicitly creating a new upload with params
             # This happens when creating a partial or final upload with a specific uid

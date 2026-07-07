@@ -261,10 +261,12 @@ def core_routes(router, options):
                 response.headers["Upload-Expires"] = expires_str
             response.status_code = status.HTTP_204_NO_CONTENT
             if options.on_upload_complete:
-                options.on_upload_complete(
+                result = options.on_upload_complete(
                     os.path.join(file_options.files_dir, f"{uuid}"),
                     file.info.metadata,
                 )
+                if inspect.isawaitable(result):
+                    await result
         else:
             response.headers["Tus-Resumable"] = options.tus_version
             response.headers["Upload-Offset"] = str(file.info.offset)
