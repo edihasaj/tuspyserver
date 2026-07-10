@@ -2,7 +2,11 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from tuspyserver import create_tus_router
+from tuspyserver import create_tus_router, init_sentry
+
+# initialize Sentry error/crash reporting as early as possible.
+# No-op unless SENTRY_DSN is set in the environment (see .env.example).
+init_sentry()
 
 # initialize a FastAPI app
 app = FastAPI()
