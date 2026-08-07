@@ -1,10 +1,15 @@
 """
 File locking utilities for tus uploads.
 
-Provides advisory file locking using fcntl (Unix) to prevent race conditions
-during concurrent upload operations. This implementation matches tusd's approach
-by using separate lock files stored in a .locks directory, where each lock file
+Provides advisory file locking to prevent race conditions during concurrent
+upload operations. This implementation matches tusd's approach by using
+separate lock files stored in a .locks directory, where each lock file
 contains the PID of the process holding the lock.
+
+Locking is backed by ``fcntl.flock`` on Unix and ``msvcrt.locking`` on
+Windows. Neither module is importable on every platform, so both imports are
+guarded: on an exotic platform that provides neither, the module degrades to
+a best-effort no-op lock instead of failing at import time.
 
 The lock acquisition is bounded by a timeout so a wedged shared filesystem
 (e.g. flapping Azure Files / SMB) cannot hang request workers indefinitely.
@@ -13,12 +18,21 @@ best-effort no-op lock so a single request fails fast instead of dragging
 all workers down.
 """
 import errno
-import fcntl
 import logging
 import os
 import time
 from contextlib import contextmanager
 from typing import Optional
+
+try:  # Unix
+    import fcntl
+except ImportError:  # pragma: no cover - platform dependent
+    fcntl = None  # type: ignore[assignment]
+
+try:  # Windows
+    import msvcrt
+except ImportError:  # pragma: no cover - platform dependent
+    msvcrt = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -30,18 +44,82 @@ LOCK_POLL_INTERVAL = 0.1
 
 _FS_UNWRITABLE_ERRNOS = {errno.EACCES, errno.EPERM, errno.EROFS, errno.ENOSPC}
 
+# Errnos meaning "someone else holds this lock" rather than a real failure.
+# flock reports EAGAIN/EWOULDBLOCK; msvcrt.locking reports EACCES or
+# EDEADLOCK depending on the Windows/CRT version.
+_LOCK_CONTENDED_ERRNOS = {
+    getattr(errno, name)
+    for name in ("EAGAIN", "EWOULDBLOCK", "EACCES", "EDEADLK", "EDEADLOCK")
+    if hasattr(errno, name)
+}
+
+# Number of bytes locked on Windows. msvcrt locks a byte range from the
+# current file position; one byte at offset 0 is enough for a whole-file
+# advisory lock, and Windows allows locking past EOF.
+_WINDOWS_LOCK_BYTES = 1
+
 
 class LockTimeoutError(IOError):
     """Raised when a lock cannot be acquired within the configured timeout."""
 
 
+def locking_available() -> bool:
+    """True when this platform provides a real cross-process file lock."""
+    return fcntl is not None or msvcrt is not None
+
+
+def _try_lock_exclusive(fd: int) -> bool:
+    """
+    Try to take an exclusive, non-blocking lock on ``fd``.
+
+    Returns True when the lock was taken (or no locking primitive exists on
+    this platform), False when another process holds it. Unexpected OS
+    errors propagate.
+    """
+    if fcntl is not None:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError as e:
+            if e.errno in _LOCK_CONTENDED_ERRNOS:
+                return False
+            raise
+
+    if msvcrt is not None:
+        try:
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_NBLCK, _WINDOWS_LOCK_BYTES)
+            return True
+        except OSError as e:
+            if e.errno in _LOCK_CONTENDED_ERRNOS:
+                return False
+            raise
+
+    logger.warning(
+        "No file locking primitive available on this platform; "
+        "proceeding without a cross-process lock"
+    )
+    return True
+
+
+def _unlock(fd: int) -> None:
+    """Release a lock previously taken by :func:`_try_lock_exclusive`."""
+    if fcntl is not None:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    elif msvcrt is not None:
+        os.lseek(fd, 0, os.SEEK_SET)
+        msvcrt.locking(fd, msvcrt.LK_UNLCK, _WINDOWS_LOCK_BYTES)
+
+
 class FileLock:
     """
-    Advisory file lock using fcntl (Unix) with separate lock files.
+    Advisory file lock with separate lock files.
 
     Matches tusd's filelocker approach by creating separate .lock files
     in a .locks directory. Each lock file contains the PID of the process
     holding the lock, allowing for lock cleanup if a process crashes.
+
+    Uses ``fcntl.flock`` on Unix and ``msvcrt.locking`` on Windows.
     """
 
     def __init__(self, file_path: str, locks_dir: Optional[str] = None):
@@ -139,22 +217,21 @@ class FileLock:
         deadline = time.monotonic() + max(timeout, 0.0) if blocking else None
         while True:
             try:
-                fcntl.flock(self._lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return True
-            except OSError as e:
-                if e.errno not in (errno.EAGAIN, errno.EWOULDBLOCK):
-                    self._close_fd()
-                    raise
-                if not blocking:
-                    self._close_fd()
-                    return False
-                if time.monotonic() >= deadline:
-                    self._close_fd()
-                    raise LockTimeoutError(
-                        f"Timed out after {timeout:.1f}s waiting for lock "
-                        f"{self.lock_file_path}"
-                    )
-                time.sleep(LOCK_POLL_INTERVAL)
+                if _try_lock_exclusive(self._lock_fd):
+                    return True
+            except OSError:
+                self._close_fd()
+                raise
+            if not blocking:
+                self._close_fd()
+                return False
+            if time.monotonic() >= deadline:
+                self._close_fd()
+                raise LockTimeoutError(
+                    f"Timed out after {timeout:.1f}s waiting for lock "
+                    f"{self.lock_file_path}"
+                )
+            time.sleep(LOCK_POLL_INTERVAL)
 
     def _close_fd(self) -> None:
         if self._lock_fd is not None:
@@ -171,7 +248,7 @@ class FileLock:
             return
         if self._lock_fd is not None:
             try:
-                fcntl.flock(self._lock_fd, fcntl.LOCK_UN)
+                _unlock(self._lock_fd)
             except Exception as e:
                 logger.warning("Error unlocking %s: %s", self.lock_file_path, e)
             self._close_fd()
