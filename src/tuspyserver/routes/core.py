@@ -79,7 +79,7 @@ def core_routes(router, options):
         if isinstance(result, dict):
             file_options.files_dir = result.get("files_dir", options.files_dir)
         # validate file
-        file = TusUploadFile(uid=uuid, options=file_options)
+        file = await TusUploadFile.open(uid=uuid, options=file_options)
 
         # DEBUG: Log file info for troubleshooting
         logger = logging.getLogger(__name__)
@@ -218,7 +218,7 @@ def core_routes(router, options):
             file_options.files_dir = result.get("files_dir", options.files_dir)
         
         # init file handle
-        file = TusUploadFile(uid=uuid, options=file_options)
+        file = await TusUploadFile.open(uid=uuid, options=file_options)
         # check if the upload ID is valid and file exists with valid info
         if not file.exists or file.info is None or uuid != file.uid:
             raise HTTPException(status_code=404)
@@ -250,8 +250,12 @@ def core_routes(router, options):
 
         # save param changes
         file.info = new_params
+        await file.save()
 
         if file.info.size == file.info.offset:
+            # Seal the upload before any completion hook runs, so the hook
+            # observes a finished object rather than an open multipart upload.
+            await file.finalize()
             response.headers["Tus-Resumable"] = options.tus_version
             response.headers["Upload-Offset"] = str(
                 str(file.info.offset) if file.info.offset > 0 else str(content_length)
@@ -261,8 +265,10 @@ def core_routes(router, options):
                 response.headers["Upload-Expires"] = expires_str
             response.status_code = status.HTTP_204_NO_CONTENT
             if options.on_upload_complete:
+                # file.path is the backend's own handle: a filesystem path
+                # for local storage, an s3:// URI for object storage.
                 result = options.on_upload_complete(
-                    os.path.join(file_options.files_dir, f"{uuid}"),
+                    file.path,
                     file.info.metadata,
                 )
                 if inspect.isawaitable(result):
@@ -276,7 +282,7 @@ def core_routes(router, options):
             response.status_code = status.HTTP_204_NO_CONTENT
 
         if file.info and file.info.size == file.info.offset:
-            file_path = os.path.join(file_options.files_dir, uuid)
+            file_path = file.path
             if options.on_upload_complete is None:
                 result = on_complete(file_path, file.info.metadata)
                 # if the callback returned a coroutine, await it

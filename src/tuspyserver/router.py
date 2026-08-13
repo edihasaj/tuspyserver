@@ -6,12 +6,15 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel
 from starlette.types import Receive, Scope, Send
 
+from tuspyserver.storage import TusStorage
 from tuspyserver.routes.core import core_routes
 from tuspyserver.routes.creation import creation_extension_routes
 from tuspyserver.routes.termination import termination_extension_routes
 
 
 class TusRouterOptions(BaseModel):
+    model_config = {"arbitrary_types_allowed": True}
+
     prefix: str
     files_dir: str
     max_size: int
@@ -26,6 +29,9 @@ class TusRouterOptions(BaseModel):
     tus_version: str
     tus_extension: str
     strict_offset_validation: bool
+    #: Opt-in storage backend. ``None`` keeps the historical behaviour of
+    #: writing straight to ``files_dir`` on the local filesystem.
+    storage: Optional[object] = None
 
 
 async def noop():
@@ -71,7 +77,10 @@ def create_tus_router(
     file_dep: Optional[Callable[..., Callable[[dict], None]]] = None,
     tags: Optional[List[str]] = None,
     strict_offset_validation: bool = False,
+    storage: Optional["TusStorage"] = None,
 ):
+    """``storage`` selects a backend (see ``tuspyserver.storage``). Leave it
+    as ``None`` to keep writing to ``files_dir`` exactly as before."""
     async def _fallback_on_complete_dep() -> Callable[[str, dict], None]:
         return on_upload_complete or (lambda *_: None)
 
@@ -111,6 +120,7 @@ def create_tus_router(
             ]
         ),
         strict_offset_validation=strict_offset_validation,
+        storage=storage,
     )
 
     clean_prefix = prefix.lstrip("/").rstrip("/")

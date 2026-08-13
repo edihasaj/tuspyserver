@@ -64,7 +64,7 @@ def termination_extension_routes(router, options):
             result = await result
         if isinstance(result, dict):
             file_options.files_dir = result.get("files_dir", options.files_dir)
-        file = TusUploadFile(uid=uuid, options=file_options)
+        file = await TusUploadFile.open(uid=uuid, options=file_options)
 
         # Check if the upload ID is valid
         if not file.exists:
@@ -75,7 +75,7 @@ def termination_extension_routes(router, options):
             raise HTTPException(status_code=status.HTTP_410_GONE, detail="Upload expired")
 
         # Delete the file and metadata for the upload from the mapping
-        file.delete(uuid)
+        await file.remove()
 
         # Return a 204 No Content response
         response.headers["Tus-Resumable"] = options.tus_version

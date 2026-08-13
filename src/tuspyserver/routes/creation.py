@@ -161,7 +161,7 @@ def creation_extension_routes(router, options):
 
                 for uid in partial_uids:
                     # Load the partial upload from the same directory
-                    partial_file = TusUploadFile(options=file_options_for_partials, uid=uid)
+                    partial_file = await TusUploadFile.open(options=file_options_for_partials, uid=uid)
 
                     if not partial_file.exists:
                         raise HTTPException(
@@ -252,7 +252,7 @@ def creation_extension_routes(router, options):
             file_options.files_dir = file_result.get("files_dir", options.files_dir)
             uid = file_result.get("uid", None)
         # create the file
-        file = TusUploadFile(options=file_options, uid=uid, params=params)
+        file = await TusUploadFile.open(options=file_options, uid=uid, params=params)
         
         # Handle Creation-With-Upload extension: check if POST has body with initial data
         # Note: FastAPI may have already consumed the request body, so we check Content-Length
@@ -277,11 +277,20 @@ def creation_extension_routes(router, options):
                             params.offset += len(body)
                             params.upload_part += 1
                             file.info = params
+                            await file.save()
                     except Exception:
                         # If body was already consumed or other error, skip
                         pass
             except (ValueError, TypeError):
                 pass  # Invalid content-length, ignore
+
+        # Concatenation still assumes local files. Rather than silently
+        # producing a truncated object on an object store, refuse it.
+        if is_final and partial_files and getattr(options, "storage", None) is not None:
+            raise HTTPException(
+                status_code=status.HTTP_501_NOT_IMPLEMENTED,
+                detail="The concatenation extension is not supported by this storage backend.",
+            )
 
         # If this is a final concatenated upload, perform the concatenation
         if is_final and partial_files:
@@ -319,6 +328,7 @@ def creation_extension_routes(router, options):
                 # Update the offset to indicate the upload is complete
                 params.offset = final_size
                 file.info = params
+                await file.save()
 
                 # Delete all partial uploads after successful concatenation
                 # Handle race conditions where partials might already be deleted
@@ -367,7 +377,7 @@ def creation_extension_routes(router, options):
         response.status_code = status.HTTP_201_CREATED
         # run completion hooks for zero-byte uploads OR final concatenated uploads
         if file.info is not None and (file.info.size == 0 or (is_final and file.info.offset == file.info.size)):
-            file_path = os.path.join(file_options.files_dir, file.uid)
+            file_path = file.path
             result = on_complete(file_path, file.info.metadata)
             # if the callback returned a coroutine, await it
             if inspect.isawaitable(result):

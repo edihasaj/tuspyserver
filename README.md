@@ -14,6 +14,7 @@ Only depends on `fastapi>=0.110` and `python>=3.8`.
 * **🧹 Expiration & cleanup** of old uploads (default retention: 5 days)
 * **💉 Dependency injection** for seamless validation (optional)
 * **📡 Comprehensive API** with *download*, *HEAD*, *DELETE*, and *OPTIONS* endpoints
+* **🗄️ Pluggable storage** — local filesystem by default, or stream straight to S3
 
 ## Installation
 
@@ -34,6 +35,12 @@ Or install directly from source:
 git clone https://github.com/edihasaj/tuspyserver
 cd tuspyserver
 pip install .
+```
+
+For the S3 storage backend, install the `s3` extra (it pulls in `boto3`):
+
+```bash
+pip install "tuspyserver[s3]"
 ```
 
 ## Usage
@@ -247,6 +254,99 @@ app.include_router(
     )
 )
 ```
+
+### Storage backends
+
+By default uploads are written to `files_dir` on the local filesystem, exactly
+as they always have been. Passing `storage=` swaps in a different backend.
+
+#### Why you might want one
+
+Sharing `files_dir` across replicas usually means a network filesystem, and
+that couples every request to it. Two things follow:
+
+* A slow or wedged mount blocks the event loop, because the filesystem calls
+  in an `async` route are synchronous. A stalled worker stops answering its
+  health endpoint, so an orchestrator marks the whole replica unready.
+* The shared volume becomes a single point of failure, and an RWX volume is
+  often the most fragile piece of a deployment.
+
+Both storage backends here keep their I/O off the event loop, and the S3
+backend removes the shared filesystem entirely.
+
+#### S3
+
+Uploads stream into an S3 multipart upload. No shared volume is involved, and
+any replica can serve any chunk of any upload.
+
+```python
+import boto3
+from tuspyserver import create_tus_router
+from tuspyserver.storage.s3 import S3Storage
+
+s3 = boto3.client(
+    "s3",
+    endpoint_url="https://s3.eu-west-par.io.cloud.ovh.net",  # any S3-compatible store
+    region_name="eu-west-par",
+    aws_access_key_id="...",
+    aws_secret_access_key="...",
+)
+
+tus_router = create_tus_router(
+    prefix="files",
+    storage=S3Storage(bucket="my-bucket", client=s3, prefix="tus/"),
+    on_upload_complete=lambda location, metadata: print(location, metadata),
+)
+```
+
+You pass the client in, so credentials, endpoints and retry policy stay under
+your control and an existing client can be reused.
+
+**Chunk sizes.** S3 requires every part except the last to be at least 5 MiB.
+tus lets a client PATCH any size it likes, so anything smaller is parked in a
+`.part` object and prepended to the next PATCH. That is correct but costs an
+extra round trip per chunk, so prefer a client chunk size of 5 MiB or more:
+
+```js
+// tus-js-client / Uppy — note MiB, not MB: 5 * 1000 * 1000 is below the limit
+new tus.Upload(file, { chunkSize: 5 * 1024 * 1024 })
+```
+
+`part_size` (default 5 MiB) sets the flush threshold. A multipart upload is
+capped at 10,000 parts, so the largest uploadable file is
+`part_size * 10_000` — 50 GiB at the default.
+
+**`on_upload_complete` receives a location, not a path.** With `S3Storage` it
+is `s3://<bucket>/<key>`, so a hook must not assume it can `open()` the value.
+The local backend still passes a filesystem path.
+
+**Locking.** `S3Storage` serializes concurrent PATCHes for one upload within a
+single process. Across replicas it relies on the tus `Upload-Offset`
+precondition, which rejects a racing PATCH with `409`. If you need a hard
+cross-replica guarantee, wrap the backend with an external lock.
+
+**Concatenation** is not supported by `S3Storage`; a final concatenated upload
+returns `501`. The other extensions — creation, creation-with-upload,
+expiration, termination — all work.
+
+#### Local filesystem
+
+The same on-disk layout as the default, but with the syscalls dispatched off
+the event loop. Useful if you keep a shared volume but want a slow mount to
+degrade uploads instead of the whole worker.
+
+```python
+from tuspyserver.storage.local import LocalFileStorage
+
+tus_router = create_tus_router(storage=LocalFileStorage("/data/uploads"))
+```
+
+#### Writing your own
+
+Subclass `tuspyserver.storage.TusStorage` and implement its async methods —
+`create`, `exists`, `size`, `append`, `flush`, `finalize`, `read`, `delete`,
+`read_info`, `write_info`, `list_uids`, `location` and `lock`. Keep blocking
+work off the event loop (`asyncio.to_thread` is enough).
 
 ### Expiration & cleanup
 

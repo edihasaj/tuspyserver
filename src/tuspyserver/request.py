@@ -18,6 +18,130 @@ from tuspyserver.file import TusUploadFile
 from tuspyserver.lock import LockTimeoutError, acquire_upload_lock
 
 
+
+def _expires_datetime(info) -> Optional[datetime.datetime]:
+    """Parse the sidecar ``expires`` value, RFC 7231 or ISO, else None."""
+    if not info.expires:
+        return None
+    if isinstance(info.expires, (int, float)):
+        return datetime.datetime.fromtimestamp(info.expires)
+    if isinstance(info.expires, str):
+        try:
+            from email.utils import parsedate_to_datetime
+
+            return parsedate_to_datetime(info.expires)
+        except (ValueError, TypeError):
+            try:
+                return datetime.datetime.fromisoformat(
+                    info.expires.replace("Z", "+00:00")
+                )
+            except (ValueError, AttributeError):
+                return None
+    return None
+
+
+async def _storage_request_chunks(
+    request: Request, uuid: str, options: TusRouterOptions, post_request: bool
+) -> bool:
+    """PATCH body handler for the pluggable storage backends.
+
+    Same contract as the filesystem path: validate under the lock, stream the
+    body into the backend, then persist the new offset. The backend keeps its
+    own I/O off the event loop, so nothing here blocks the worker.
+    """
+    storage = options.storage
+    file = await TusUploadFile.open(uid=uuid, options=options)
+    if not file.exists or not file.info:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    async with storage.lock(uuid):
+        # Re-read under the lock: the offset is read-modify-write and another
+        # request may have advanced it between open() and here.
+        await file.reload()
+        info = file.info
+        if info is None:
+            raise HTTPException(status_code=404, detail="Upload not found")
+
+        expires_dt = _expires_datetime(info)
+        if expires_dt is not None:
+            now = (
+                datetime.datetime.now(expires_dt.tzinfo)
+                if expires_dt.tzinfo
+                else datetime.datetime.now()
+            )
+            if expires_dt < now:
+                raise HTTPException(status_code=410, detail="Upload expired")
+
+        raw_offset = request.headers.get("upload-offset")
+        if raw_offset is None:
+            raise HTTPException(
+                status_code=400, detail="Upload-Offset header is required"
+            )
+        try:
+            client_offset = int(raw_offset)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid Upload-Offset header")
+        if info.offset != client_offset:
+            raise HTTPException(status_code=409, detail="Offset mismatch")
+
+        validated_offset = info.offset
+        written = 0
+        has_chunks = False
+
+        try:
+            async for chunk in request.stream():
+                has_chunks = True
+                if not chunk:
+                    continue
+                new_offset = validated_offset + written
+                if info.size is not None and new_offset + len(chunk) > info.size:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Upload would exceed declared Upload-Length",
+                    )
+                if new_offset + len(chunk) > options.max_size:
+                    raise HTTPException(
+                        status_code=413, detail="Upload exceeds maximum allowed size"
+                    )
+                await storage.append(uuid, chunk)
+                written += len(chunk)
+
+            # Durable before the offset is advertised, so a resume never asks
+            # to continue from bytes the backend does not actually hold.
+            await storage.flush(uuid)
+            info.offset = validated_offset + written
+            info.upload_chunk_size = written
+            info.upload_part += 1
+            file.info = info
+            await file.save()
+
+        except HTTPException:
+            raise
+        except ClientDisconnect:
+            await storage.flush(uuid)
+            info.offset = validated_offset + written
+            info.upload_chunk_size = written
+            info.upload_part += 1
+            file.info = info
+            await file.save()
+            return False
+        except Exception as exc:
+            info.error = str(exc)
+            info.offset = validated_offset + written
+            file.info = info
+            await file.save()
+            return False
+
+        if post_request and not has_chunks:
+            info.offset = validated_offset
+            info.upload_chunk_size = 0
+            info.upload_part += 1
+            file.info = info
+            await file.save()
+
+    return True
+
+
 def make_request_chunks_dep(options: TusRouterOptions):
     async def request_chunks_dep(
         request: Request,
@@ -25,6 +149,11 @@ def make_request_chunks_dep(options: TusRouterOptions):
         post_request: bool = False,
         file_dep: Callable[[dict], None] = Depends(options.file_dep),
     ) -> Optional[bool]:
+        if getattr(options, "storage", None) is not None:
+            return await _storage_request_chunks(
+                request=request, uuid=uuid, options=options, post_request=post_request
+            )
+
         # Create a copy of options to avoid mutating the original
         file_options = deepcopy(options)
         # call file_dep to possibly update the files_dir

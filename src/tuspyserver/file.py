@@ -90,6 +90,29 @@ class TusUploadFile:
         # instantiate upload info
         self._info = TusUploadInfo(file=self, params=params)
 
+    @classmethod
+    async def open(
+        cls,
+        options: TusRouterOptions,
+        uid: Optional[str] = None,
+        params: Optional[TusUploadParams] = None,
+    ):
+        """Open an upload using whichever backend ``options`` selects.
+
+        With no ``storage`` configured this is the historical constructor,
+        unchanged. With one, it returns a ``StorageUploadFile`` exposing the
+        same accessors.
+        """
+        storage = getattr(options, "storage", None)
+        if storage is None:
+            return cls(options=options, uid=uid, params=params)
+
+        from tuspyserver.storage_file import StorageUploadFile
+
+        return await StorageUploadFile.open(
+            storage=storage, options=options, uid=uid, params=params
+        )
+
     @property
     def path(self) -> str:
         return os.path.join(self._options.files_dir, f"{self.uid}")
@@ -112,6 +135,21 @@ class TusUploadFile:
 
     def create(self) -> None:
         open(self.path, "a").close()
+
+    async def save(self) -> None:
+        """No-op: the filesystem backend persists on assignment to ``info``.
+
+        Exists so routes can ``await file.save()`` without caring which
+        backend they got.
+        """
+        return None
+
+    async def remove(self) -> None:
+        self.delete(self.uid)
+
+    async def finalize(self) -> None:
+        """No-op: a filesystem upload is already complete once written."""
+        return None
 
     def read(self) -> Optional[bytes]:
         if self.exists:
