@@ -168,3 +168,54 @@ def test_s3_storage_roundtrip(size, chunk):
     ].read()
     assert body == payload
     client.delete_object(Bucket="scriptix-staging", Key=f"_verify/tus-e2e/{uid}")
+
+
+# --- lock_factory seam ------------------------------------------------------
+def test_s3_storage_uses_injected_lock():
+    """A distributed lock must actually be taken, and released, per PATCH.
+
+    S3 has no lock primitive, so a multi-replica deployment depends entirely on
+    this hook being honoured; if it silently were not, concurrent PATCHes for
+    one upload would interleave and corrupt the offset.
+    """
+    import contextlib
+
+    from tuspyserver.storage.s3 import S3Storage
+
+    events = []
+
+    @contextlib.asynccontextmanager
+    async def factory(uid):
+        events.append(("enter", uid))
+        try:
+            yield
+        finally:
+            events.append(("exit", uid))
+
+    storage = S3Storage(bucket="b", client=object(), lock_factory=factory)
+
+    async def use():
+        async with storage.lock("abc"):
+            events.append(("body", "abc"))
+
+    import asyncio
+
+    asyncio.run(use())
+    assert events == [("enter", "abc"), ("body", "abc"), ("exit", "abc")]
+
+
+def test_s3_storage_without_lock_factory_still_works():
+    """Omitting the factory keeps the previous in-process behaviour."""
+    import asyncio
+
+    from tuspyserver.storage.s3 import S3Storage
+
+    storage = S3Storage(bucket="b", client=object())
+    ran = []
+
+    async def use():
+        async with storage.lock("abc"):
+            ran.append(True)
+
+    asyncio.run(use())
+    assert ran == [True]

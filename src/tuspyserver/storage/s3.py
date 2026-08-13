@@ -28,7 +28,7 @@ import contextlib
 import json
 import re
 from collections import defaultdict
-from typing import Any, Dict, List, Optional
+from typing import Any, AsyncContextManager, Callable, Dict, List, Optional
 
 from tuspyserver.storage import TusStorage
 
@@ -61,6 +61,10 @@ class S3Storage(TusStorage):
     :param part_size: bytes buffered before a part is flushed. Must be at
         least ``S3_MIN_PART_SIZE``. Larger means fewer requests but more
         memory held per in-flight upload.
+    :param lock_factory: optional ``uid -> async context manager`` providing a
+        cross-process lock. Without one, PATCHes are serialized only within
+        this process, which is not enough when several replicas can receive
+        chunks of the same upload -- see :meth:`lock`.
     """
 
     def __init__(
@@ -69,6 +73,7 @@ class S3Storage(TusStorage):
         client: Any,
         prefix: str = "tus/",
         part_size: int = S3_MIN_PART_SIZE,
+        lock_factory: Optional[Callable[[str], AsyncContextManager[None]]] = None,
     ) -> None:
         if part_size < S3_MIN_PART_SIZE:
             raise ValueError(
@@ -78,6 +83,7 @@ class S3Storage(TusStorage):
         self.client = client
         self.prefix = prefix
         self.part_size = part_size
+        self._lock_factory = lock_factory
         # Bytes received during the current PATCH, not yet flushed to S3.
         self._pending: Dict[str, bytearray] = defaultdict(bytearray)
         self._locks: Dict[str, asyncio.Lock] = {}
@@ -347,16 +353,25 @@ class S3Storage(TusStorage):
 
     @contextlib.asynccontextmanager
     async def lock(self, uid: str):
-        """Serialize PATCHes for one upload within this process.
+        """Serialize PATCHes for one upload.
 
-        This does not coordinate across replicas -- S3 has no lock primitive.
-        Cross-replica safety rests on the tus ``Upload-Offset`` precondition,
-        which rejects a racing PATCH with 409. Deployments that need a hard
-        guarantee should front this with an external lock (Redis, Postgres).
+        PATCH is read-modify-write on the offset, so two concurrent requests
+        for one upload must not interleave. The in-process lock below is only
+        enough for a single-replica deployment: S3 has no lock primitive, so
+        with several replicas the tus ``Upload-Offset`` precondition is the
+        only remaining guard, and that check is itself read-then-write.
+
+        Pass ``lock_factory`` to close that gap with a real distributed lock.
+        Both are taken when a factory is present -- the local one still saves a
+        network round trip for same-process contention.
         """
-        lock = self._locks.setdefault(uid, asyncio.Lock())
-        async with lock:
-            yield
+        local = self._locks.setdefault(uid, asyncio.Lock())
+        async with local:
+            if self._lock_factory is None:
+                yield
+                return
+            async with self._lock_factory(uid):
+                yield
 
 
 def _is_not_found(exc: Exception) -> bool:

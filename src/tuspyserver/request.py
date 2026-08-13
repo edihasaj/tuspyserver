@@ -54,7 +54,15 @@ async def _storage_request_chunks(
     if not file.exists or not file.info:
         raise HTTPException(status_code=404, detail="Upload not found")
 
-    async with storage.lock(uuid):
+    try:
+        lock_cm = storage.lock(uuid)
+        await lock_cm.__aenter__()
+    except (LockTimeoutError, TimeoutError) as exc:
+        # Another replica is mid-write on this upload. Tell the client to come
+        # back rather than proceeding unlocked or hanging a worker.
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    try:
         # Re-read under the lock: the offset is read-modify-write and another
         # request may have advanced it between open() and here.
         await file.reload()
@@ -138,6 +146,8 @@ async def _storage_request_chunks(
             info.upload_part += 1
             file.info = info
             await file.save()
+    finally:
+        await lock_cm.__aexit__(None, None, None)
 
     return True
 

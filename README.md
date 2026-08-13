@@ -320,10 +320,29 @@ capped at 10,000 parts, so the largest uploadable file is
 is `s3://<bucket>/<key>`, so a hook must not assume it can `open()` the value.
 The local backend still passes a filesystem path.
 
-**Locking.** `S3Storage` serializes concurrent PATCHes for one upload within a
-single process. Across replicas it relies on the tus `Upload-Offset`
-precondition, which rejects a racing PATCH with `409`. If you need a hard
-cross-replica guarantee, wrap the backend with an external lock.
+**Locking.** A PATCH is read-modify-write on the upload offset, so two
+requests for one upload must not interleave. `S3Storage` serializes them
+within a single process; across replicas S3 offers no lock primitive, leaving
+only the tus `Upload-Offset` precondition, which is itself read-then-write.
+
+Run more than one replica and you want `lock_factory` — any
+`uid -> async context manager`:
+
+```python
+import contextlib
+
+@contextlib.asynccontextmanager
+async def upload_lock(uid: str):
+    async with my_redis_lock(f"tus:{uid}", ttl=300):
+        yield
+
+S3Storage(bucket="...", client=s3, lock_factory=upload_lock)
+```
+
+Both locks are taken when a factory is present; the in-process one saves a
+round trip for same-process contention. Give the lock a TTL comfortably longer
+than a single PATCH — a slow client sending a large chunk can hold it for
+minutes — so that a pod dying mid-request releases it.
 
 **Concatenation** is not supported by `S3Storage`; a final concatenated upload
 returns `501`. The other extensions — creation, creation-with-upload,
