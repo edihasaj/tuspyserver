@@ -3,6 +3,8 @@ name = "tuspyserver"
 version = "4.4.0"
 description ="A Python tus server implementation as a FastAPI router"
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     { name = "Edi Hasaj", email = "edi.hasaj@applifyer.com" }
 ]
